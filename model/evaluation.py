@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
@@ -191,6 +192,8 @@ def run_model_experiment(model_name, pipeline, search_space, ds, out_dir,
         classification_report(ds.y_test, tuned_pred, target_names=ds.class_names, digits=4))
     _plot_confusion(ds.y_test, tuned_pred, ds.class_names,
                     f"{model_name} (tuned) - test set", out_dir / "confusion_matrix.png")
+    # The dashboard loads this file to score live store-product lines.
+    joblib.dump(best, out_dir / "model.joblib", compress=3)
     if explain is not None:
         explain(best, ds, out_dir)
 

@@ -1,7 +1,7 @@
 pandas
 numpy
 plotly
-streamlit
+streamlit>=1.45
 scipy
 scikit-learn>=1.2
 xgboost>=1.7

@@ -18,95 +18,85 @@ def inject_css() -> None:
         }}
         h1, h2, h3, [data-testid="stMarkdownContainer"] h1,
         [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3 {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-            letter-spacing: -0.01em;
+            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif; letter-spacing: -0.01em;
         }}
-        .block-container {{ padding-top: 1.8rem; max-width: 1360px; }}
+        .block-container {{ padding-top: 1.6rem; max-width: 1360px; }}
         footer {{ visibility: hidden; }}
 
-        /* Page header */
-        .page-head {{
-            display: flex; justify-content: space-between; align-items: flex-end;
-            flex-wrap: wrap; gap: 0.75rem 2rem;
-            padding-bottom: 0.9rem; margin-bottom: 0.2rem; border-bottom: 1px solid {GRID};
+        /* Banner */
+        .banner {{
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem 2rem;
+            padding: 1.3rem 1.6rem; margin-bottom: 1rem; border-radius: 14px; color: #fff;
+            background: linear-gradient(120deg, #1C2F4F 0%, {BLUE} 55%, #3F6FA8 100%);
+            box-shadow: 0 6px 20px rgba(43,76,126,0.22);
         }}
-        .page-head h1 {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-            font-size: 2rem; font-weight: 700; line-height: 1.1; margin: 0; padding: 0;
+        .banner h1 {{ font-size: 1.7rem; font-weight: 700; line-height: 1.1; margin: 0; padding: 0; color: #fff; }}
+        .banner .sub {{ opacity: 0.85; margin-top: 0.3rem; font-size: 0.95rem; }}
+        .banner .right {{ display: flex; gap: 0.7rem; flex-wrap: wrap; }}
+        .banner .pill {{
+            background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 12px; padding: 0.45rem 0.9rem; text-align: left; min-width: 7.5rem;
         }}
-        .page-head .sub {{ color: {MUTED}; margin-top: 0.4rem; max-width: 46rem; }}
-        .page-head .asof {{ text-align: right; }}
-        .page-head .asof .label {{ color: {MUTED}; font-size: 0.85rem; }}
-        .page-head .asof .date {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-            font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums;
-        }}
+        .banner .pill .l {{ font-size: 0.75rem; opacity: 0.8; }}
+        .banner .pill .v {{ font-family: 'Archivo', sans-serif; font-weight: 600; font-size: 1.05rem; }}
 
         /* Tabs */
         button[data-baseweb="tab"] p {{ font-size: 1.02rem; font-weight: 500; }}
         [data-baseweb="tab-list"] {{ gap: 1.6rem; }}
 
-        /* Headline, sections, legend */
-        .lede {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-            font-size: 1.5rem; font-weight: 600; line-height: 1.25;
-            max-width: 48rem; margin: 0.6rem 0 0.4rem 0;
+        /* KPI cards */
+        .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.8rem; margin: 0.2rem 0 1rem 0; }}
+        .kpi {{
+            background: #fff; border: 1px solid {GRID}; border-top: 4px solid var(--tone, {BLUE});
+            border-radius: 12px; padding: 0.8rem 1rem; transition: transform .15s ease, box-shadow .15s ease;
         }}
-        .lede-sub {{ max-width: 46rem; margin-bottom: 0.4rem; color: {MUTED}; }}
-        .section-title {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-            font-size: 1.05rem; font-weight: 600; margin: 0.8rem 0 0.2rem 0;
-        }}
-        .section-note {{ color: {MUTED}; font-size: 0.9rem; margin-bottom: 0.4rem; }}
-        .legend {{ display: flex; flex-wrap: wrap; gap: 0.3rem 1.4rem; margin: 0.5rem 0 0.2rem 0;
-                   color: {MUTED}; font-size: 0.9rem; }}
-        .legend .swatch {{ display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px;
-                           margin-right: 0.4rem; vertical-align: -0.05rem; }}
-
-        /* KPI row */
-        .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-                 border-top: 1px solid {GRID}; border-bottom: 1px solid {GRID}; margin: 0.8rem 0 1rem 0; }}
-        .kpi {{ padding: 0.85rem 1.1rem 0.85rem 0; }}
-        .kpi + .kpi {{ padding-left: 1.1rem; border-left: 1px solid {GRID}; }}
-        .k-label {{ color: {MUTED}; font-size: 0.85rem; }}
+        .kpi:hover {{ transform: translateY(-3px); box-shadow: 0 8px 18px rgba(28,43,58,0.10); }}
+        .k-label {{ color: {MUTED}; font-size: 0.82rem; }}
         .k-value {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-            font-size: 1.9rem; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums;
+            font-family: 'Archivo', sans-serif; font-size: 1.85rem; font-weight: 700; line-height: 1.15;
+            font-variant-numeric: tabular-nums; color: var(--tone, {INK});
         }}
-        .k-value.bad {{ color: {PRIORITY_COLORS["High"]}; }}
-        .k-value.good {{ color: {STATUS_COLORS["Healthy"]}; }}
-        .k-note {{ color: {MUTED}; font-size: 0.85rem; }}
+        .k-note {{ color: {MUTED}; font-size: 0.8rem; }}
 
-        /* Recommendation card */
-        .rec-card {{ background: #FFFFFF; border: 1px solid {GRID}; border-left: 4px solid {BLUE};
-                     border-radius: 3px; padding: 0.8rem 1rem; margin: 0.4rem 0 0.8rem 0; }}
-        .rec-card .rec-head {{ font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-                               font-weight: 600; font-size: 1.05rem; margin-bottom: 0.2rem; }}
-        .rec-card .rec-prio {{ font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 0.8rem;
-                               font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 3px; margin-right: 0.6rem; }}
+        /* Section titles */
+        .section-title {{ font-family: 'Archivo', sans-serif; font-size: 1.05rem; font-weight: 600; margin: 0.8rem 0 0.2rem 0; }}
+        .section-note {{ color: {MUTED}; font-size: 0.88rem; margin-bottom: 0.4rem; }}
+
+        /* Line inspector */
+        .insp {{ background: #fff; border: 1px solid {GRID}; border-radius: 14px; padding: 1rem 1.1rem; margin-bottom: 0.6rem;
+                 box-shadow: 0 2px 10px rgba(28,43,58,0.05); }}
+        .insp .title {{ font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 1.15rem; }}
+        .insp .sub {{ color: {MUTED}; font-size: 0.85rem; margin-bottom: 0.5rem; }}
+        .chip {{ display: inline-block; padding: 0.12rem 0.65rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-right: 0.4rem; }}
+        .probbar {{ display: flex; height: 26px; border-radius: 8px; overflow: hidden; margin: 0.55rem 0 0.3rem 0; }}
+        .probbar span {{ display: flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 600; }}
+        .problabels {{ display: flex; justify-content: space-between; color: {MUTED}; font-size: 0.75rem; }}
+        .why {{ margin-top: 0.7rem; padding: 0.55rem 0.75rem; background: #F5F7F9; border-radius: 8px; font-size: 0.92rem; }}
+
+        /* Cards for models */
+        .mcard {{ background: #fff; border: 1px solid {GRID}; border-radius: 12px; padding: 0.8rem 1rem; height: 100%;
+                  transition: transform .15s ease, box-shadow .15s ease; }}
+        .mcard:hover {{ transform: translateY(-3px); box-shadow: 0 8px 18px rgba(28,43,58,0.10); }}
+        .mcard.best {{ border: 2px solid {BLUE}; background: #F3F7FC; }}
+        .mcard .n {{ font-family: 'Archivo', sans-serif; font-weight: 600; }}
+        .mcard .f {{ font-family: 'Archivo', sans-serif; font-size: 1.7rem; font-weight: 700; color: {BLUE}; }}
+        .mcard .m {{ color: {MUTED}; font-size: 0.82rem; }}
+        .badge {{ background: {BLUE}; color: #fff; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.5rem;
+                  border-radius: 999px; margin-left: 0.4rem; vertical-align: 0.1rem; }}
 
         /* Metrics, sidebar */
-        [data-testid="stMetricValue"] {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-            font-size: 1.7rem; font-variant-numeric: tabular-nums;
-        }}
+        [data-testid="stMetricValue"] {{ font-family: 'Archivo', sans-serif; font-size: 1.6rem; font-variant-numeric: tabular-nums; }}
         [data-testid="stMetricLabel"] p {{ color: {MUTED}; }}
         .brand {{ padding: 0.2rem 0 0.6rem 0; }}
-        .brand .name {{ font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif;
-                        font-weight: 700; font-size: 1.15rem; }}
+        .brand .name {{ font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 1.15rem; }}
         .brand .tag {{ color: {MUTED}; font-size: 0.85rem; }}
-        [data-testid="stSidebar"] [data-testid="stExpander"] details {{ border-color: {GRID}; }}
-        [data-testid="stSidebar"] [data-testid="stExpander"] summary p {{
-            font-family: 'Archivo', 'IBM Plex Sans', system-ui, sans-serif; font-weight: 600;
-        }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] details {{ border-color: {GRID}; border-radius: 10px; }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary p {{ font-family: 'Archivo', sans-serif; font-weight: 600; }}
 
         @media (max-width: 640px) {{
             .block-container {{ padding-top: 3.6rem; }}
-            .page-head h1 {{ font-size: 1.6rem; }}
-            .page-head .asof {{ text-align: left; }}
-            .lede {{ font-size: 1.3rem; }}
+            .banner h1 {{ font-size: 1.4rem; }}
             .kpis {{ grid-template-columns: 1fr 1fr; }}
-            .kpi, .kpi + .kpi {{ padding-left: 0; border-left: none; }}
         }}
         </style>
         """,
@@ -126,12 +116,31 @@ def section(title: str, note: str | None = None) -> None:
 
 
 def kpi_row(items: list[tuple[str, str, str, str]]) -> None:
+    """items: (label, value, note, tone) where tone is bad, good, warn or empty."""
+    tones = {"bad": PRIORITY_COLORS["High"], "good": STATUS_COLORS["Healthy"], "warn": STATUS_COLORS["Overstock"], "": BLUE}
     cells = "".join(
-        f'<div class="kpi"><div class="k-label">{label}</div>'
-        f'<div class="k-value {tone}">{value}</div><div class="k-note">{note}</div></div>'
+        f'<div class="kpi" style="--tone:{tones.get(tone, BLUE)}"><div class="k-label">{label}</div>'
+        f'<div class="k-value">{value}</div><div class="k-note">{note}</div></div>'
         for label, value, note, tone in items
     )
     st.markdown(f'<div class="kpis">{cells}</div>', unsafe_allow_html=True)
+
+
+def chip(text: str, bg: str, fg: str) -> str:
+    return f'<span class="chip" style="background:{bg};color:{fg}">{text}</span>'
+
+
+def prob_bar(p_under: float, p_healthy: float, p_over: float) -> str:
+    """Stacked bar of the model's three class probabilities."""
+    parts = [(p_under, STATUS_COLORS["Understock risk"], "white"), (p_healthy, STATUS_COLORS["Healthy"], "white"),
+             (p_over, STATUS_COLORS["Overstock"], INK)]
+    spans = "".join(
+        f'<span style="width:{p * 100:.1f}%;background:{bg};color:{fg}">{p:.0%}</span>' if p >= 0.07
+        else f'<span style="width:{p * 100:.1f}%;background:{bg}"></span>'
+        for p, bg, fg in parts
+    )
+    return (f'<div class="probbar">{spans}</div>'
+            '<div class="problabels"><span>Understock</span><span>Healthy</span><span>Overstock</span></div>')
 
 
 def style(fig: go.Figure, height: int = 340, title: str | None = None, legend: bool = False) -> go.Figure:
@@ -154,8 +163,8 @@ def style(fig: go.Figure, height: int = 340, title: str | None = None, legend: b
     return fig
 
 
-def show(fig: go.Figure) -> None:
-    st.plotly_chart(fig, theme=None, config={"displayModeBar": False})
+def show(fig: go.Figure, key: str | None = None) -> None:
+    st.plotly_chart(fig, theme=None, config={"displayModeBar": False}, key=key)
 
 
 

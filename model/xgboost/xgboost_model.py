@@ -54,14 +54,16 @@ def explain(model, ds, out_dir):
     save_permutation_importance(model, ds, out_dir)
 
 
+def fit_params(dataset):
+    """Balanced sample weights (XGBoost has no class_weight option)."""
+    return {"clf__sample_weight": compute_sample_weight("balanced", dataset.y_train)}
+
+
 def run(dataset, n_iter=20, cv_splits=3):
     """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
-    # "balanced" sample weights give the rarer Understock/Overstock rows more influence
-    # (XGBClassifier has no class_weight argument, so weights are passed to fit()).
-    weights = compute_sample_weight("balanced", dataset.y_train)
     return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
                                 n_iter=n_iter, cv_splits=cv_splits,
-                                fit_params={"clf__sample_weight": weights}, explain=explain)
+                                fit_params=fit_params(dataset), explain=explain)
 
 
 if __name__ == "__main__":

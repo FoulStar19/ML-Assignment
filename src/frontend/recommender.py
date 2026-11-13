@@ -84,38 +84,30 @@ def recommend(lines: pd.DataFrame, transfers: pd.DataFrame, lead: int, over_days
         d["transfer_in"] > 0, "In " + d["transfer_in"].astype(str) + " from " + d["from_stores"],
         np.where(d["transfer_out"] > 0, "Out " + d["transfer_out"].astype(str) + " to " + d["to_stores"], ""),
     )
-    d["urgency"] = d["inventory_level"] / d["reorder_point"]
+    d["risk"] = np.maximum(d["p_under"], d["p_over"]) if "p_under" in d else 0.0   # the model's confidence in a problem
     d["rank"] = d["priority"].map({p: i for i, p in enumerate(PRIORITY_ORDER)})
-    return d.sort_values(["rank", "urgency"]).reset_index(drop=True)
+    return d.sort_values(["rank", "risk"], ascending=[True, False]).reset_index(drop=True)
 
 
 def _reason(r: pd.Series, lead: int, over_days: float) -> str:
+    """One short line per recommendation."""
     a = r["action"]
-    inv, rop, tgt = f"{r['inventory_level']:,.0f}", f"{r['reorder_point']:,.0f}", f"{r['target_level']:,.0f}"
+    inv, tgt = f"{r['inventory_level']:,.0f}", f"{r['target_level']:,.0f}"
+    chance = f"{r['p_under']:.0%}" if "p_under" in r.index else ""
     if a == "Order now" and r["priority"] == "Critical":
-        return (f"Stock of {inv} covers only {r['days_of_cover']:.1f} days against a {lead}-day lead time. "
-                f"Order {r['net_order']:,.0f} units to reach {tgt}.")
+        return f"{inv} on hand covers {r['days_of_cover']:.1f} days, less than the {lead}-day lead time. Order {r['net_order']:,.0f}."
     if a == "Order now":
-        return f"Stock of {inv} is at or below the reorder point of {rop}. Order {r['net_order']:,.0f} units to reach {tgt}."
+        return f"{chance} chance of running short. {inv} covers {r['days_of_cover']:.1f} days. Order {r['net_order']:,.0f} to reach {tgt}."
     if a == "Transfer in":
-        return (f"Stock of {inv} is at or below the reorder point of {rop}. Receive {r['transfer_in']:,} units from "
-                f"{r['from_stores']}, which hold surplus, so no new order is needed.")
+        return f"{chance} chance of running short. Take {r['transfer_in']:,} from {r['from_stores']} instead of ordering."
     if a == "Transfer in + order":
-        return (f"Stock of {inv} is at or below the reorder point of {rop}. Receive {r['transfer_in']:,} units from "
-                f"{r['from_stores']} and order the remaining {r['net_order']:,.0f}.")
+        return f"{chance} chance of running short. Take {r['transfer_in']:,} from {r['from_stores']}, order {r['net_order']:,.0f}."
     if a == "Transfer out":
-        return (f"Holds {r['excess_units']:,.0f} units above target. Send {r['transfer_out']:,} to {r['to_stores']}, "
-                f"which sits at or below its reorder point.")
+        return f"{r['excess_units']:,.0f} above target. Send {r['transfer_out']:,} to {r['to_stores']}."
     if a == "Clear excess":
-        return (f"Holds {r['excess_units']:,.0f} units above target ({r['excess_share']:.0%} over), worth about "
-                f"{money(r['excess_value'])}. Consider a promotion or markdown.")
+        return f"{r['excess_units']:,.0f} above target ({r['excess_share']:.0%} over), about {money(r['excess_value'])}. Consider a promotion."
     if a == "Pause ordering":
-        return (f"Covers {r['days_of_cover']:.1f} days, above the {over_days:g}-day limit. Hold orders; stock "
-                f"reaches the reorder point in about {r['days_to_reorder']:.0f} days.")
+        return f"{r['days_of_cover']:.1f} days of cover. Hold orders for now."
     if a == "Reorder soon":
-        if r["days_to_reorder"] < 0.1:
-            return "Stock is only just above the reorder point. Prepare the next order."
-        return f"Stock reaches the reorder point in about {r['days_to_reorder']:.1f} days. Prepare the next order."
-    return "Stock is within its healthy range."
-
-
+        return f"Reaches the reorder point in about {r['days_to_reorder']:.1f} days. Prepare the next order."
+    return "Healthy."

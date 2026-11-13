@@ -1,28 +1,49 @@
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 
-from config import (ACTION_ORDER, BLUE, DETAIL_DAYS, INK, MUTED, PRIORITY_COLORS, PRIORITY_ORDER,
-                    STATUS_COLORS, STATUS_ORDER, STATUS_TEXT)
+from config import BLUE, DETAIL_DAYS, INK, MUTED, STATUS_COLORS, STATUS_ORDER
 from theme import style
 
 
-def status_strip(lines: pd.DataFrame) -> go.Figure:
-    counts = lines["status"].value_counts().reindex(STATUS_ORDER, fill_value=0)
+def _fade(hex_colour: str, alpha: float) -> str:
+    h = hex_colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def stock_map(lines: pd.DataFrame, selected: tuple | None, focus: str = "All") -> go.Figure:
+    """One square per store-product line, coloured by the model's call. Click a square to inspect it."""
+    stores = sorted(lines["store_id"].unique())
+    products = sorted(lines["product_id"].unique())
     fig = go.Figure()
-    for status, n in counts.items():
-        fig.add_bar(
-            x=[n], y=[""], orientation="h", showlegend=False,
-            marker_color=STATUS_COLORS[status],
-            text=[f"<b>{n}</b>"] if n else None,
-            textposition="inside", insidetextanchor="middle",
-            textfont=dict(color=STATUS_TEXT[status], size=15),
-            hovertemplate=f"{status}: {n} lines<extra></extra>",
-        )
-    style(fig, height=58)
-    fig.update_layout(barmode="stack", bargap=0, margin=dict(l=0, r=0, t=0, b=0))
-    fig.update_xaxes(visible=False, range=[0, max(int(counts.sum()), 1)])
-    fig.update_yaxes(visible=False)
+    for status in STATUS_ORDER:
+        s = lines[lines["status"] == status]
+        if s.empty:
+            continue
+        colour = STATUS_COLORS[status] if focus in ("All", status) else _fade(STATUS_COLORS[status], 0.16)
+        fig.add_trace(go.Scatter(
+            x=s["product_id"], y=s["store_id"], mode="markers", name=status,
+            marker=dict(symbol="square", size=27, color=colour, line=dict(color="white", width=1)),
+            customdata=s[["confidence", "inventory_level", "order_qty"]].to_numpy(),
+            hovertemplate=("<b>%{y} · %{x}</b><br>" + status + ", %{customdata[0]:.0%} sure<br>"
+                           "On hand %{customdata[1]:,.0f}, order %{customdata[2]:,.0f}<extra></extra>"),
+            selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)),
+        ))
+    if selected is not None:
+        sel = lines[(lines["store_id"] == selected[0]) & (lines["product_id"] == selected[1])]
+        if not sel.empty:
+            fig.add_trace(go.Scatter(
+                x=sel["product_id"], y=sel["store_id"], mode="markers", showlegend=False, hoverinfo="skip",
+                marker=dict(symbol="square-open", size=37, color=INK, line=dict(color=INK, width=3)),
+                selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)),
+            ))
+    style(fig, height=360, legend=True)
+    fig.update_layout(margin=dict(l=8, r=8, t=40, b=8), clickmode="event+select")
+    fig.update_xaxes(categoryorder="array", categoryarray=products, tickvals=products,
+                     ticktext=[str(int(p[1:])) if p[1:].isdigit() else p for p in products],
+                     title="Product", showgrid=False, fixedrange=True)
+    fig.update_yaxes(categoryorder="array", categoryarray=stores, autorange="reversed",
+                     title="", showgrid=False, fixedrange=True)
     return fig
 
 
@@ -57,51 +78,9 @@ def stock_vs_reorder(lines: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def status_by_store(lines: pd.DataFrame) -> go.Figure:
-    counts = (
-        lines.groupby(["store_id", "status"]).size().unstack(fill_value=0)
-        .reindex(columns=STATUS_ORDER, fill_value=0).reset_index()
-        .melt(id_vars="store_id", var_name="status", value_name="lines")
-    )
-    counts["label"] = counts["lines"].astype(str).where(counts["lines"] > 0, "")
-    fig = px.bar(
-        counts, y="store_id", x="lines", color="status", orientation="h", text="label",
-        color_discrete_map=STATUS_COLORS,
-        category_orders={"status": STATUS_ORDER, "store_id": sorted(counts["store_id"].unique())},  # px lists the first item at the top of horizontal bars
-    )
-    for trace in fig.data:
-        trace.textfont.color = STATUS_TEXT[trace.name]
-        trace.textposition = "inside"
-        trace.insidetextanchor = "middle"
-    style(fig, title="Stock status by store")
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(title="", showgrid=False)
-    fig.update_layout(bargap=0.3)
-    return fig
-
-
-def actions_chart(recs: pd.DataFrame) -> go.Figure:
-    acted = recs[recs["action"].isin(ACTION_ORDER)]
-    counts = acted.groupby(["action", "priority"]).size().reset_index(name="lines")
-    fig = px.bar(
-        counts, y="action", x="lines", color="priority", orientation="h", text="lines",
-        color_discrete_map=PRIORITY_COLORS,
-        category_orders={"action": ACTION_ORDER, "priority": PRIORITY_ORDER[:4]},
-    )
-    for trace in fig.data:
-        trace.textfont.color = "white" if trace.name != "Medium" else INK
-        trace.textposition = "inside"
-        trace.insidetextanchor = "middle"
-    style(fig, height=330, title="Lines by recommended action", legend=True)
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(title="", showgrid=False)
-    fig.update_layout(bargap=0.3)
-    return fig
-
-
 def line_detail(plan: pd.DataFrame, store: str, product: str, asof: pd.Timestamp) -> go.Figure:
     h = plan[(plan["store_id"] == store) & (plan["product_id"] == product) & (plan["date"] <= asof)].tail(DETAIL_DAYS)
-    low = h[h["status"] == "Understock risk"]
+    low = h[h["inventory_level"] <= h["reorder_point"]]
     red = STATUS_COLORS["Understock risk"]
     fig = go.Figure()
     fig.add_scatter(x=h["date"], y=h["target_level"], name="Target level",
@@ -112,7 +91,7 @@ def line_detail(plan: pd.DataFrame, store: str, product: str, asof: pd.Timestamp
                     line=dict(color="#A9B5C1", width=1.2))
     fig.add_scatter(x=h["date"], y=h["inventory_level"], name="Stock on hand",
                     line=dict(color=INK, width=2))
-    fig.add_scatter(x=low["date"], y=low["inventory_level"], name="Order day", mode="markers",
+    fig.add_scatter(x=low["date"], y=low["inventory_level"], name="Below reorder point", mode="markers",
                     marker=dict(color=red, size=8, line=dict(color="white", width=1)))
     style(fig, height=330, title=f"Store {store}, product {product}: last {len(h)} days", legend=True)
     fig.update_yaxes(title="Units", rangemode="tozero")

@@ -1,15 +1,3 @@
-"""
-Model 1 - Logistic Regression (BASELINE)
-
-Why this model
---------------
-A simple, fast, linear model. It sets the performance floor that the more
-complex models (Random Forest, XGBoost, MLP) must beat to justify their
-extra complexity. Its coefficients are directly interpretable, showing which
-factors push a product towards Understock or Overstock.
-
-Run:  python logistic_regression_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
-"""
 import sys
 from pathlib import Path
 
@@ -57,8 +45,12 @@ def explain(model, ds, out_dir):
                  Path(out_dir) / f"coefficients_{cls.lower()}.png", "coefficient (standardised)")
 
 
+def run(dataset, n_iter=20, cv_splits=3):
+    """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
+    return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
+                                n_iter=n_iter, cv_splits=cv_splits, explain=explain)
+
+
 if __name__ == "__main__":
     args = parse_args("Train and evaluate the Logistic Regression baseline")
-    dataset = prepare_data(args.data)
-    run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
-                         n_iter=args.n_iter, cv_splits=args.cv_splits, explain=explain)
+    run(prepare_data(args.data), n_iter=args.n_iter, cv_splits=args.cv_splits)

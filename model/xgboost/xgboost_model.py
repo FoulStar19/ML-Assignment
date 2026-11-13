@@ -1,15 +1,3 @@
-"""
-Model 3 - XGBoost (gradient boosting)
-
-Why this model
---------------
-Builds trees sequentially, each one correcting the errors of the previous ones.
-Usually the strongest model on structured/tabular data, with built-in
-regularisation. It is also the model chosen for the recommender system (as a
-demand-forecast regressor), so tuning it here pays off twice.
-
-Run:  python xgboost_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
-"""
 import sys
 from pathlib import Path
 
@@ -66,12 +54,16 @@ def explain(model, ds, out_dir):
     save_permutation_importance(model, ds, out_dir)
 
 
-if __name__ == "__main__":
-    args = parse_args("Train and evaluate the XGBoost model")
-    dataset = prepare_data(args.data)
+def run(dataset, n_iter=20, cv_splits=3):
+    """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
     # "balanced" sample weights give the rarer Understock/Overstock rows more influence
     # (XGBClassifier has no class_weight argument, so weights are passed to fit()).
     weights = compute_sample_weight("balanced", dataset.y_train)
-    run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
-                         n_iter=args.n_iter, cv_splits=args.cv_splits,
-                         fit_params={"clf__sample_weight": weights}, explain=explain)
+    return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
+                                n_iter=n_iter, cv_splits=cv_splits,
+                                fit_params={"clf__sample_weight": weights}, explain=explain)
+
+
+if __name__ == "__main__":
+    args = parse_args("Train and evaluate the XGBoost model")
+    run(prepare_data(args.data), n_iter=args.n_iter, cv_splits=args.cv_splits)

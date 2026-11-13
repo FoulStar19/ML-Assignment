@@ -1,16 +1,3 @@
-"""
-Model 2 - Random Forest (bagging ensemble)
-
-Why this model
---------------
-Averages many decorrelated decision trees. It captures non-linear effects and
-feature interactions (e.g. "high stock AND low recent sales AND promotion")
-that Logistic Regression cannot, is robust to noise/outliers, and needs no
-feature scaling. Feature importance supports the "key influencing variables"
-analysis required in Part A.
-
-Run:  python random_forest_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
-"""
 import sys
 from pathlib import Path
 
@@ -63,8 +50,12 @@ def explain(model, ds, out_dir):
     save_permutation_importance(model, ds, out_dir)
 
 
+def run(dataset, n_iter=20, cv_splits=3):
+    """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
+    return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
+                                n_iter=n_iter, cv_splits=cv_splits, explain=explain)
+
+
 if __name__ == "__main__":
     args = parse_args("Train and evaluate the Random Forest model")
-    dataset = prepare_data(args.data)
-    run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
-                         n_iter=args.n_iter, cv_splits=args.cv_splits, explain=explain)
+    run(prepare_data(args.data), n_iter=args.n_iter, cv_splits=args.cv_splits)

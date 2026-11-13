@@ -1,20 +1,3 @@
-"""
-Model 4 - Multi-Layer Perceptron (deep learning / neural network)
-
-Why this model
---------------
-A neural network learns its own non-linear feature combinations, so it
-represents a completely different methodology from the linear model and the
-two tree ensembles. Including it lets the report test whether deep learning
-actually helps on structured retail data.
-
-Note: scikit-learn's MLPClassifier has no class_weight option, so class
-imbalance is judged with macro-F1 / per-class recall rather than accuracy.
-early_stopping holds out 10% of the TRAINING rows (random) only to decide when
-to stop; the real test set is never touched.
-
-Run:  python mlp_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
-"""
 import sys
 from pathlib import Path
 
@@ -70,8 +53,12 @@ def explain(model, ds, out_dir):
     save_permutation_importance(model, ds, out_dir)
 
 
+def run(dataset, n_iter=20, cv_splits=3):
+    """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
+    return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
+                                n_iter=n_iter, cv_splits=cv_splits, explain=explain)
+
+
 if __name__ == "__main__":
     args = parse_args("Train and evaluate the MLP neural network")
-    dataset = prepare_data(args.data)
-    run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
-                         n_iter=args.n_iter, cv_splits=args.cv_splits, explain=explain)
+    run(prepare_data(args.data), n_iter=args.n_iter, cv_splits=args.cv_splits)

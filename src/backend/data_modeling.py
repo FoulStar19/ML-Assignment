@@ -1,4 +1,8 @@
+import importlib.util
+import time
+import traceback
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -32,6 +36,15 @@ CATEGORICAL_FEATURES = [
 ]
 
 LINE = "─" * 45
+
+# The four model scripts (each one has a run(dataset, n_iter, cv_splits) function)
+MODEL_ROOT = Path(__file__).resolve().parents[2] / "model"
+MODEL_SCRIPTS = [          # (label, script path)
+    ("Logistic Regression", MODEL_ROOT / "logistic_regression" / "logistic_regression_model.py"),
+    ("Random Forest",       MODEL_ROOT / "random_forest" / "random_forest_model.py"),
+    ("XGBoost",             MODEL_ROOT / "xgboost" / "xgboost_model.py"),
+    ("MLP",                 MODEL_ROOT / "mlp" / "mlp_model.py"),
+]
 
 
 # ─────────────────────────────────────────────
@@ -122,3 +135,64 @@ def build_preprocessor(numeric_features, categorical_features, scale):
         ],
         verbose_feature_names_out=False,
     )
+
+
+# ─────────────────────────────────────────────
+# 3. TRAIN + EVALUATE ALL MODELS (called by pipeline.py)
+# ─────────────────────────────────────────────
+def _load_model_script(path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def model_comparison(results):
+    """Print one table with the tuned test-set results of every model that finished."""
+    print(LINE)
+    print("Model comparison (tuned models, test set)")
+    header = (f"{'Model':<32} {'Accuracy':>8} {'Macro-F1':>8} {'Under rec':>9} "
+              f"{'Over rec':>8} {'MCC':>7} {'Seconds':>8}")
+    print(header)
+    print("-" * len(header))
+    for name, res in results.items():
+        t = res["tuned"]["test"]
+        print(f"{name:<32} {t['accuracy']:>8.4f} {t['f1_macro']:>8.4f} "
+              f"{t['per_class']['Understock']['recall']:>9.4f} "
+              f"{t['per_class']['Overstock']['recall']:>8.4f} {t['mcc']:>7.4f} "
+              f"{res['tuned']['seconds']:>8.1f}")
+    best = max(results, key=lambda n: results[n]["tuned"]["test"]["f1_macro"])
+    print(f"\nBest by test macro-F1 : {best}")
+    print(LINE + "\n")
+
+
+def data_model(processed_data_file=None, n_iter=20, cv_splits=3):
+    """Processed CSV -> train, tune and evaluate all four models.
+
+    Every model writes its metrics, plots and reports to model/<name>/outputs/.
+    A model that crashes is reported and skipped so the others still run.
+    Returns {model name: results dict} for the models that finished.
+    """
+    print(LINE)
+    print("MODEL TRAINING")
+    print(f"Random search candidates : {n_iter}   |   time-series CV folds : {cv_splits}")
+    print(LINE + "\n")
+
+    dataset = prepare_data(processed_data_file)
+
+    results, failed = {}, []
+    for label, script in MODEL_SCRIPTS:
+        t0 = time.time()
+        try:
+            module = _load_model_script(script)
+            results[module.MODEL_NAME] = module.run(dataset, n_iter=n_iter, cv_splits=cv_splits)
+        except Exception:
+            failed.append(label)
+            print(f"\n{label} FAILED after {time.time() - t0:.0f}s - continuing with the next model.")
+            traceback.print_exc()
+
+    if results:
+        model_comparison(results)
+    if failed:
+        print(f"Models that failed: {failed}\n")
+    return results

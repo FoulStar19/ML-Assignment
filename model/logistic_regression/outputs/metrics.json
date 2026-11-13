@@ -8,7 +8,7 @@
   "default": {
     "cv_f1_macro_mean": 0.7279400478596143,
     "cv_f1_macro_std": 0.0021661768393168284,
-    "seconds": 4.8,
+    "seconds": 5.2,
     "test": {
       "accuracy": 0.7455862068965518,
       "balanced_accuracy": 0.7257549139826928,
@@ -43,7 +43,7 @@
   "tuned": {
     "cv_f1_macro_mean": 0.7283504207547583,
     "cv_f1_macro_std": 0.0018957603359104037,
-    "seconds": 23.6,
+    "seconds": 27.6,
     "best_params": {
       "clf__C": 0.14445251022763064,
       "clf__class_weight": null

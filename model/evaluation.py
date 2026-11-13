@@ -1,14 +1,3 @@
-"""
-evaluation.py - shared training / tuning / evaluation harness for the four model scripts.
-
-For one model it:
-  1. fits the DEFAULT settings    -> time-series CV on the training years + test-set metrics
-  2. tunes with RandomizedSearchCV (time-series CV, scored on macro-F1) -> test-set metrics
-  3. writes everything to <model folder>/outputs/ (metrics.json is read by compare_models.py)
-
-The data itself comes from src/backend/data_modeling.py (which reads the
-pipeline's processed CSV), so nothing here touches raw data.
-"""
 import argparse
 import json
 import sys

@@ -13,12 +13,14 @@ imbalance is judged with macro-F1 / per-class recall rather than accuracy.
 early_stopping holds out 10% of the TRAINING rows (random) only to decide when
 to stop; the real test set is never touched.
 
-Run:  python mlp_model.py [--n-iter 20] [--data path/to/csv]
+Run:  python mlp_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+MODEL_DIR = Path(__file__).resolve().parents[1]                    # model/  (evaluation.py)
+sys.path.insert(0, str(MODEL_DIR))
+sys.path.insert(0, str(MODEL_DIR.parent / "src" / "backend"))       # data pipeline + data_modeling.py
 
 import matplotlib
 matplotlib.use("Agg")
@@ -27,9 +29,8 @@ from scipy.stats import loguniform
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
-from common import config as cfg
-from common.data_prep import build_preprocessor, prepare_data
-from common.evaluation import parse_args, run_model_experiment, save_permutation_importance
+from data_modeling import RANDOM_STATE, build_preprocessor, prepare_data
+from evaluation import parse_args, run_model_experiment, save_permutation_importance
 
 MODEL_NAME = "MLP Neural Network"
 OUT_DIR = Path(__file__).resolve().parent / "outputs"
@@ -40,7 +41,7 @@ def build_pipeline(ds) -> Pipeline:
     return Pipeline([
         ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=True)),
         ("clf", MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=300, early_stopping=True,
-                              n_iter_no_change=10, random_state=cfg.RANDOM_STATE)),
+                              n_iter_no_change=10, random_state=RANDOM_STATE)),
     ])
 
 

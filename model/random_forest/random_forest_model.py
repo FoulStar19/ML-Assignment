@@ -9,22 +9,23 @@ that Logistic Regression cannot, is robust to noise/outliers, and needs no
 feature scaling. Feature importance supports the "key influencing variables"
 analysis required in Part A.
 
-Run:  python random_forest_model.py [--n-iter 20] [--data path/to/csv]
+Run:  python random_forest_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+MODEL_DIR = Path(__file__).resolve().parents[1]                    # model/  (evaluation.py)
+sys.path.insert(0, str(MODEL_DIR))
+sys.path.insert(0, str(MODEL_DIR.parent / "src" / "backend"))       # data pipeline + data_modeling.py
 
 import pandas as pd
 from scipy.stats import randint
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 
-from common import config as cfg
-from common.data_prep import build_preprocessor, prepare_data
-from common.evaluation import (parse_args, plot_bar, run_model_experiment,
-                               save_permutation_importance)
+from data_modeling import RANDOM_STATE, build_preprocessor, prepare_data
+from evaluation import (parse_args, plot_bar, run_model_experiment,
+                        save_permutation_importance)
 
 MODEL_NAME = "Random Forest"
 OUT_DIR = Path(__file__).resolve().parent / "outputs"
@@ -35,7 +36,7 @@ def build_pipeline(ds) -> Pipeline:
     n_jobs=1 inside the model because the search already runs candidates in parallel."""
     return Pipeline([
         ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=False)),
-        ("clf", RandomForestClassifier(random_state=cfg.RANDOM_STATE, n_jobs=1)),
+        ("clf", RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=1)),
     ])
 
 

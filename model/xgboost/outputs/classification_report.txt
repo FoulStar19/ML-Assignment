@@ -1,0 +1,9 @@
+              precision    recall  f1-score   support
+
+  Understock     0.7627    0.8569    0.8070      2809
+     Healthy     0.7917    0.6946    0.7400      8154
+   Overstock     0.5838    0.6915    0.6331      3537
+
+    accuracy                         0.7253     14500
+   macro avg     0.7127    0.7477    0.7267     14500
+weighted avg     0.7354    0.7253    0.7269     14500

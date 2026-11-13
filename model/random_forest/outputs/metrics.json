@@ -1,0 +1,86 @@
+{
+  "model": "Random Forest",
+  "n_iter": 20,
+  "cv_splits": 3,
+  "n_train": 57200,
+  "n_test": 14500,
+  "split": "Train : 2022-01-01 \u2192 2023-07-26\nTest  : 2023-08-03 \u2192 2023-12-25   (7-day purge gap, target = stock status over the next 7 days)",
+  "default": {
+    "cv_f1_macro_mean": 0.7250909320533592,
+    "cv_f1_macro_std": 0.00140368340908782,
+    "seconds": 60.5,
+    "test": {
+      "accuracy": 0.7411724137931035,
+      "balanced_accuracy": 0.7189843352523466,
+      "precision_macro": 0.7361597950808667,
+      "recall_macro": 0.7189843352523466,
+      "f1_macro": 0.7264520824086752,
+      "f1_weighted": 0.7385724968322972,
+      "mcc": 0.5514082301013553,
+      "per_class": {
+        "Understock": {
+          "precision": 0.8140043763676149,
+          "recall": 0.7945888216447134,
+          "f1": 0.8041794271302468,
+          "support": 2809
+        },
+        "Healthy": {
+          "precision": 0.7543332562976658,
+          "recall": 0.8005886681383371,
+          "f1": 0.7767729652546407,
+          "support": 8154
+        },
+        "Overstock": {
+          "precision": 0.6401417525773195,
+          "recall": 0.5617755159739892,
+          "f1": 0.5984038548411383,
+          "support": 3537
+        }
+      },
+      "roc_auc_ovr_macro": 0.885015652837628
+    }
+  },
+  "tuned": {
+    "cv_f1_macro_mean": 0.7350733046633299,
+    "cv_f1_macro_std": 0.0021553621899650065,
+    "seconds": 722.9,
+    "best_params": {
+      "clf__class_weight": "balanced_subsample",
+      "clf__max_depth": null,
+      "clf__max_features": 0.5,
+      "clf__min_samples_leaf": 5,
+      "clf__min_samples_split": 11,
+      "clf__n_estimators": 330
+    },
+    "test": {
+      "accuracy": 0.7391724137931035,
+      "balanced_accuracy": 0.7532410628286438,
+      "precision_macro": 0.7261933938357529,
+      "recall_macro": 0.7532410628286438,
+      "f1_macro": 0.7379294592015015,
+      "f1_weighted": 0.7403293555324008,
+      "mcc": 0.5693180002686681,
+      "per_class": {
+        "Understock": {
+          "precision": 0.7793259883344135,
+          "recall": 0.8561765752936988,
+          "f1": 0.8159457167090755,
+          "support": 2809
+        },
+        "Healthy": {
+          "precision": 0.7932930918846411,
+          "recall": 0.7252882021093942,
+          "f1": 0.7577679543852905,
+          "support": 8154
+        },
+        "Overstock": {
+          "precision": 0.6059611012882041,
+          "recall": 0.6782584110828386,
+          "f1": 0.6400747065101388,
+          "support": 3537
+        }
+      },
+      "roc_auc_ovr_macro": 0.8886817306526099
+    }
+  }
+}

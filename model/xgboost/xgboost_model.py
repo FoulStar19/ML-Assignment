@@ -8,12 +8,14 @@ Usually the strongest model on structured/tabular data, with built-in
 regularisation. It is also the model chosen for the recommender system (as a
 demand-forecast regressor), so tuning it here pays off twice.
 
-Run:  python xgboost_model.py [--n-iter 20] [--data path/to/csv]
+Run:  python xgboost_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+MODEL_DIR = Path(__file__).resolve().parents[1]                    # model/  (evaluation.py)
+sys.path.insert(0, str(MODEL_DIR))
+sys.path.insert(0, str(MODEL_DIR.parent / "src" / "backend"))       # data pipeline + data_modeling.py
 
 import pandas as pd
 from scipy.stats import loguniform, randint, uniform
@@ -21,10 +23,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.utils.class_weight import compute_sample_weight
 from xgboost import XGBClassifier
 
-from common import config as cfg
-from common.data_prep import build_preprocessor, prepare_data
-from common.evaluation import (parse_args, plot_bar, run_model_experiment,
-                               save_permutation_importance)
+from data_modeling import RANDOM_STATE, build_preprocessor, prepare_data
+from evaluation import (parse_args, plot_bar, run_model_experiment,
+                        save_permutation_importance)
 
 MODEL_NAME = "XGBoost"
 OUT_DIR = Path(__file__).resolve().parent / "outputs"
@@ -36,7 +37,7 @@ def build_pipeline(ds) -> Pipeline:
     return Pipeline([
         ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=False)),
         ("clf", XGBClassifier(objective="multi:softprob", eval_metric="mlogloss",
-                              tree_method="hist", random_state=cfg.RANDOM_STATE, n_jobs=1)),
+                              tree_method="hist", random_state=RANDOM_STATE, n_jobs=1)),
     ])
 
 

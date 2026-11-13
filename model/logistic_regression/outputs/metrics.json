@@ -1,0 +1,82 @@
+{
+  "model": "Logistic Regression (Baseline)",
+  "n_iter": 20,
+  "cv_splits": 3,
+  "n_train": 57200,
+  "n_test": 14500,
+  "split": "Train : 2022-01-01 \u2192 2023-07-26\nTest  : 2023-08-03 \u2192 2023-12-25   (7-day purge gap, target = stock status over the next 7 days)",
+  "default": {
+    "cv_f1_macro_mean": 0.7279400478596143,
+    "cv_f1_macro_std": 0.0021661768393168284,
+    "seconds": 4.8,
+    "test": {
+      "accuracy": 0.7455862068965518,
+      "balanced_accuracy": 0.7257549139826928,
+      "precision_macro": 0.7394233189122706,
+      "recall_macro": 0.7257549139826928,
+      "f1_macro": 0.7315447470041506,
+      "f1_weighted": 0.7429829589848166,
+      "mcc": 0.5600203795419704,
+      "per_class": {
+        "Understock": {
+          "precision": 0.811651179413867,
+          "recall": 0.8084727661089356,
+          "f1": 0.8100588550026753,
+          "support": 2809
+        },
+        "Healthy": {
+          "precision": 0.7597115608280995,
+          "recall": 0.8010792249202845,
+          "f1": 0.779847182425979,
+          "support": 8154
+        },
+        "Overstock": {
+          "precision": 0.6469072164948454,
+          "recall": 0.5677127509188578,
+          "f1": 0.6047282035837976,
+          "support": 3537
+        }
+      },
+      "roc_auc_ovr_macro": 0.8913961123464871
+    }
+  },
+  "tuned": {
+    "cv_f1_macro_mean": 0.7283504207547583,
+    "cv_f1_macro_std": 0.0018957603359104037,
+    "seconds": 23.6,
+    "best_params": {
+      "clf__C": 0.14445251022763064,
+      "clf__class_weight": null
+    },
+    "test": {
+      "accuracy": 0.7456551724137931,
+      "balanced_accuracy": 0.7256157964266956,
+      "precision_macro": 0.7395443554689866,
+      "recall_macro": 0.7256157964266956,
+      "f1_macro": 0.731517593899897,
+      "f1_weighted": 0.7430422397893037,
+      "mcc": 0.5600698849566013,
+      "per_class": {
+        "Understock": {
+          "precision": 0.8111587982832618,
+          "recall": 0.8074047703809185,
+          "f1": 0.8092774308652988,
+          "support": 2809
+        },
+        "Healthy": {
+          "precision": 0.7596187376496571,
+          "recall": 0.8014471425067452,
+          "f1": 0.7799725487855822,
+          "support": 8154
+        },
+        "Overstock": {
+          "precision": 0.6478555304740407,
+          "recall": 0.567995476392423,
+          "f1": 0.6053028020488099,
+          "support": 3537
+        }
+      },
+      "roc_auc_ovr_macro": 0.8913455208572469
+    }
+  }
+}

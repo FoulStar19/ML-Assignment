@@ -8,21 +8,22 @@ complex models (Random Forest, XGBoost, MLP) must beat to justify their
 extra complexity. Its coefficients are directly interpretable, showing which
 factors push a product towards Understock or Overstock.
 
-Run:  python logistic_regression_model.py [--n-iter 20] [--data path/to/csv]
+Run:  python logistic_regression_model.py [--n-iter 20] [--cv-splits 3] [--data path/to/csv]
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # make `common` importable
+MODEL_DIR = Path(__file__).resolve().parents[1]                    # model/  (evaluation.py)
+sys.path.insert(0, str(MODEL_DIR))
+sys.path.insert(0, str(MODEL_DIR.parent / "src" / "backend"))       # data pipeline + data_modeling.py
 
 import pandas as pd
 from scipy.stats import loguniform
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-from common import config as cfg
-from common.data_prep import build_preprocessor, prepare_data
-from common.evaluation import parse_args, plot_bar, run_model_experiment
+from data_modeling import RANDOM_STATE, build_preprocessor, prepare_data
+from evaluation import parse_args, plot_bar, run_model_experiment
 
 MODEL_NAME = "Logistic Regression (Baseline)"
 OUT_DIR = Path(__file__).resolve().parent / "outputs"
@@ -32,7 +33,7 @@ def build_pipeline(ds) -> Pipeline:
     """Scaling matters for LR (regularisation penalises large coefficients), so scale=True."""
     return Pipeline([
         ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=True)),
-        ("clf", LogisticRegression(max_iter=2000, random_state=cfg.RANDOM_STATE)),
+        ("clf", LogisticRegression(max_iter=2000, random_state=RANDOM_STATE)),
     ])
 
 

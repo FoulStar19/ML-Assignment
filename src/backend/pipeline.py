@@ -7,14 +7,16 @@ from data_transforming import data_transform
 # ─────────────────────────────────────────────
 # 0. FILE PATHS
 # ─────────────────────────────────────────────
-RAW_DATA_FILE = os.path.join("data", "raw", "retail_store_inventory.csv")
-PROCESSED_DATA_DIR = os.path.join("data", "processed")
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+RAW_DATA_FILE = os.path.join(ROOT_DIR, "data", "raw", "retail_store_inventory.csv")
+PROCESSED_DATA_DIR = os.path.join(ROOT_DIR, "data", "processed")
 PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, "retail_store_inventory_processed.csv")
 
-# Create the output folder if it doesn't exist yet - just in case
-os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
 
 def run_pipeline():
+    # Create the output folder if it doesn't exist yet - just in case
+    os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
+
     # ─────────────────────────────────────────────
     # 1. LOAD DATA
     # ─────────────────────────────────────────────
@@ -35,3 +37,7 @@ def run_pipeline():
     # ─────────────────────────────────────────────
     df_transformed.to_csv(PROCESSED_DATA_FILE, index=False)
     print(f"Processed data saved to {PROCESSED_DATA_FILE}")
+
+
+if __name__ == "__main__":
+    run_pipeline()

@@ -1,0 +1,63 @@
+"""
+Model 1 - Logistic Regression (BASELINE)
+
+Why this model
+--------------
+A simple, fast, linear model. It sets the performance floor that the more
+complex models (Random Forest, XGBoost, MLP) must beat to justify their
+extra complexity. Its coefficients are directly interpretable, showing which
+factors push a product towards Understock or Overstock.
+
+Run:  python logistic_regression_model.py [--n-iter 20] [--data path/to/csv]
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # make `common` importable
+
+import pandas as pd
+from scipy.stats import loguniform
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+
+from common import config as cfg
+from common.data_prep import build_preprocessor, prepare_data
+from common.evaluation import parse_args, plot_bar, run_model_experiment
+
+MODEL_NAME = "Logistic Regression (Baseline)"
+OUT_DIR = Path(__file__).resolve().parent / "outputs"
+
+
+def build_pipeline(ds) -> Pipeline:
+    """Scaling matters for LR (regularisation penalises large coefficients), so scale=True."""
+    return Pipeline([
+        ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=True)),
+        ("clf", LogisticRegression(max_iter=2000, random_state=cfg.RANDOM_STATE)),
+    ])
+
+
+# Part B tuning: C = inverse regularisation strength (small C = stronger regularisation);
+# class_weight="balanced" up-weights the rarer Understock/Overstock classes.
+SEARCH_SPACE = {
+    "clf__C": loguniform(1e-3, 1e2),
+    "clf__class_weight": [None, "balanced"],
+}
+
+
+def explain(model, ds, out_dir):
+    """Coefficients per class: positive = pushes the prediction towards that class."""
+    names = model.named_steps["prep"].get_feature_names_out()
+    coefs = model.named_steps["clf"].coef_                      # shape (n_classes, n_features)
+    table = pd.DataFrame(coefs.T, index=names, columns=ds.class_names)
+    table.to_csv(Path(out_dir) / "coefficients.csv")
+    for cls in ("Understock", "Overstock"):
+        top = table[cls].reindex(table[cls].abs().sort_values(ascending=False).index).head(15)
+        plot_bar(top, f"Logistic Regression - top drivers of {cls}",
+                 Path(out_dir) / f"coefficients_{cls.lower()}.png", "coefficient (standardised)")
+
+
+if __name__ == "__main__":
+    args = parse_args("Train and evaluate the Logistic Regression baseline")
+    dataset = prepare_data(args.data)
+    run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
+                         n_iter=args.n_iter, cv_splits=args.cv_splits, explain=explain)

@@ -37,5 +37,10 @@ def data_clean(df_load):
         print("First few duplicates:")
         print(df_clean[df_clean.duplicated(keep="first")].head().to_string())
     print(LINE + "\n")
+
+    # 3. Check for Outliers
+    print(LINE)
+    print("3. Outliers")
+    numeric_cols = df_clean.select_dtypes(include="number").columns
  
     return df_clean

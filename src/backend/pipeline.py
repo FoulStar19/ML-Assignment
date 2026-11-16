@@ -48,7 +48,7 @@ def run_pipeline(train_models=False, n_iter=20, cv_splits=3):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Load -> clean -> transform -> train the four models")
+    parser = argparse.ArgumentParser(description="Load -> clean -> transform -> train the models")
     parser.add_argument("--n-iter", type=int, default=20,
                         help="random-search candidates per model (default 20)")
     parser.add_argument("--cv-splits", type=int, default=3,

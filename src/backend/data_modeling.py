@@ -45,6 +45,8 @@ MODEL_SCRIPTS = [          # (label, script path)
     ("XGBoost",             MODEL_ROOT / "xgboost" / "xgboost_model.py"),
     ("MLP",                 MODEL_ROOT / "mlp" / "mlp_model.py"),
 ]
+# Fifth model: XGBoost regressor that forecasts demand; the dashboard's recommender uses it to size orders
+DEMAND_SCRIPT = MODEL_ROOT / "xgboost_demand" / "xgboost_demand_model.py"
 
 
 # ─────────────────────────────────────────────
@@ -116,6 +118,45 @@ def prepare_data(data_path=None, test_fraction=TEST_FRACTION, horizon_days=HORIZ
     )
 
 
+def prepare_demand_data(data_path=None, test_fraction=TEST_FRACTION, horizon_days=HORIZON_DAYS):
+    """Same features and chronological split as prepare_data, but the target is a number:
+    the average daily units sold over the next `horizon_days` days (what the stock-status label looks at)."""
+    needed = ["date", "units_sold"] + LINE_KEYS + NUMERIC_FEATURES + CATEGORICAL_FEATURES
+    df = load_processed(data_path, required_columns=list(dict.fromkeys(needed)))
+
+    df = df.sort_values(LINE_KEYS + ["date"], kind="stable").reset_index(drop=True)
+    df["target"] = df.groupby(LINE_KEYS, sort=False)["units_sold"].transform(
+        lambda s: s.rolling(horizon_days).mean().shift(-horizon_days))
+    df = df.dropna(subset=["target"]).copy()          # last horizon_days of each line have no future window
+    df["holiday_promotion"] = df["holiday_promotion"].astype(str)
+    df = df.sort_values(["date"] + LINE_KEYS, kind="stable").reset_index(drop=True)
+
+    dates = pd.Index(df["date"].unique()).sort_values()
+    test_start = dates[int(len(dates) * (1 - test_fraction))]
+    train_end = test_start - pd.Timedelta(days=horizon_days)
+    train = df[df["date"] < train_end]
+    test = df[df["date"] >= test_start]
+
+    features = NUMERIC_FEATURES + CATEGORICAL_FEATURES
+    rows_per_day = int(train.groupby("date").size().max())
+    split_info = (
+        f"Train : {train['date'].min().date()} → {(train_end - pd.Timedelta(days=1)).date()}\n"
+        f"Test  : {test_start.date()} → {test['date'].max().date()}   "
+        f"({horizon_days}-day purge gap, target = average daily units sold over the next {horizon_days} days)"
+    )
+    return Dataset(
+        X_train=train[features].reset_index(drop=True),
+        X_test=test[features].reset_index(drop=True),
+        y_train=train["target"].to_numpy(),
+        y_test=test["target"].to_numpy(),
+        numeric_features=list(NUMERIC_FEATURES),
+        categorical_features=list(CATEGORICAL_FEATURES),
+        class_names=[],                      # regression: no classes
+        cv_gap=rows_per_day * horizon_days,
+        split_info=split_info,
+    )
+
+
 # ─────────────────────────────────────────────
 # 2. PREPROCESSOR (fitted inside each model's sklearn Pipeline, so CV never sees the validation fold)
 # ─────────────────────────────────────────────
@@ -167,7 +208,7 @@ def model_comparison(results):
 
 
 def data_model(processed_data_file=None, n_iter=20, cv_splits=3):
-    """Processed CSV -> train, tune and evaluate all four models.
+    """Processed CSV -> train, tune and evaluate the four classifiers and the XGBoost demand model.
 
     Every model writes its metrics, plots and reports to model/<name>/outputs/.
     A model that crashes is reported and skipped so the others still run.
@@ -193,6 +234,16 @@ def data_model(processed_data_file=None, n_iter=20, cv_splits=3):
 
     if results:
         model_comparison(results)
+
+    # The demand model is not a classifier, so it is trained on its own dataset and kept out of the comparison table.
+    t0 = time.time()
+    try:
+        _load_model_script(DEMAND_SCRIPT).run(prepare_demand_data(processed_data_file), n_iter=n_iter, cv_splits=cv_splits)
+    except Exception:
+        failed.append("XGBoost demand")
+        print(f"\nXGBoost demand FAILED after {time.time() - t0:.0f}s.")
+        traceback.print_exc()
+
     if failed:
         print(f"Models that failed: {failed}\n")
     return results

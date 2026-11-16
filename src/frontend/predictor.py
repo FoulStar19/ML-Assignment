@@ -1,4 +1,7 @@
-"""The best trained model: which one it is, loading it, and scoring store-product lines with it.
+"""The trained models the recommender uses, and how it scores store-product lines with them.
+
+1. Status model: the classifier with the best tuned test macro-F1. It calls each line Understock / Healthy / Overstock.
+2. Demand model: the XGBoost regressor that forecasts daily demand. It sets cover days, reorder point and order size.
 
 "Best" means the highest tuned test macro-F1, the same rule pipeline.py and the Model results tab use.
 The pipeline saves each tuned model as model/<name>/outputs/model.joblib. If that file is missing
@@ -14,7 +17,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import MODEL_DIR, ROOT_DIR
+from config import DEMAND_DIR, MODEL_DIR, ROOT_DIR
+from planning import load_data
 
 for _path in (ROOT_DIR / "src" / "backend", MODEL_DIR):   # the pipeline code lives outside the frontend folder
     if str(_path) not in sys.path:
@@ -102,3 +106,64 @@ def add_predictions(lines: pd.DataFrame, model, review: int) -> pd.DataFrame:
     out["excess_units"] = np.where(over, np.floor(-gap).clip(lower=0), 0)
     out["excess_value"] = out["excess_units"] * out["avg_price"]
     return out
+
+
+# ─────────────────────────────────────────────
+# XGBoost demand model
+# ─────────────────────────────────────────────
+def demand_model_info() -> dict | None:
+    """Test scores of the tuned XGBoost demand model (None if it has not been trained)."""
+    path = DEMAND_DIR / "demand_metrics.json"
+    if not path.exists():
+        return None
+    m = json.loads(path.read_text())
+    t = m["tuned"]["test"]
+    return {"name": "XGBoost", "folder": DEMAND_DIR, "metrics": m, "wape": t["wape"], "mae": t["mae"],
+            "baseline_wape": m["baseline"]["wape"]}
+
+
+def _refit_demand(info: dict):
+    """Fit the demand model again on the training period using the settings the tuning found."""
+    from data_modeling import _load_model_script, prepare_demand_data
+
+    module = _load_model_script(info["folder"].parent / "xgboost_demand_model.py")
+    ds = prepare_demand_data()
+    pipe = module.build_pipeline(ds)
+    pipe.set_params(**info["metrics"]["tuned"]["best_params"])
+    if "clf__n_jobs" in pipe.get_params():
+        pipe.set_params(clf__n_jobs=-1)
+    return pipe.fit(ds.X_train, ds.y_train)
+
+
+def load_demand_model(info: dict):
+    """The fitted demand model. Loads demand_model.joblib, or refits and saves it if it is missing or unreadable."""
+    path = info["folder"] / "demand_model.joblib"
+    if path.exists():
+        try:
+            return _load(str(path), path.stat().st_mtime, "demand")
+        except Exception:
+            pass
+    with st.spinner("Preparing the XGBoost demand model (first start only)..."):
+        model = _refit_demand(info)
+        joblib.dump(model, path, compress=3)
+    return model
+
+
+@st.cache_data(show_spinner="Forecasting demand...")
+def _forecast_all(stamp: float, _model) -> pd.DataFrame:
+    """Expected daily demand for every store-product-day. `stamp` refreshes the cache after a new training run."""
+    df = load_data()
+    X = df[FEATURES].copy()
+    X["holiday_promotion"] = X["holiday_promotion"].astype(str)
+    out = df[["store_id", "product_id", "date"]].copy()
+    out["mu_model"] = np.clip(_model.predict(X), 1, None)
+    return out
+
+
+def with_model_demand(plan: pd.DataFrame, info: dict) -> pd.DataFrame:
+    """Swap the rolling-forecast demand (mu) for the XGBoost forecast; the policy numbers then follow from it."""
+    model = load_demand_model(info)
+    stamp = (info["folder"] / "demand_model.joblib").stat().st_mtime
+    out = plan.merge(_forecast_all(stamp, model), on=["store_id", "product_id", "date"], how="left")
+    out["mu"] = out["mu_model"].fillna(out["mu"])
+    return out.drop(columns="mu_model")

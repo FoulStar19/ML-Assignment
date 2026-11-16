@@ -43,7 +43,7 @@
   "tuned": {
     "cv_f1_macro_mean": 0.723059171738531,
     "cv_f1_macro_std": 0.00034515271290685,
-    "seconds": 191.0,
+    "seconds": 179.6,
     "best_params": {
       "clf__colsample_bytree": 0.6234380314193007,
       "clf__gamma": 0.3481521364198942,

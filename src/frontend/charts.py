@@ -63,16 +63,11 @@ def stock_vs_reorder(lines: pd.DataFrame) -> go.Figure:
             marker=dict(color=STATUS_COLORS[status], size=9, line=dict(color="white", width=1)),
             customdata=s[["store_id", "product_id", "order_qty"]].to_numpy(),
             hovertemplate=(
-                "Store %{customdata[0]}, product %{customdata[1]}<br>"
-                "On hand %{y:,.0f}, reorder point %{x:,.0f}<br>"
-                "Order %{customdata[2]:,.0f}<extra></extra>"
+                "%{customdata[0]} · %{customdata[1]}<br>"
+                "On hand %{y:,.0f} · reorder %{x:,.0f}<extra></extra>"
             ),
         ))
-    fig.add_annotation(
-        x=x_max, y=0, xanchor="right", yanchor="bottom", showarrow=False,
-        text="Below the dotted line: order needed", font=dict(size=12, color=MUTED),
-    )
-    style(fig, title="Stock on hand vs reorder point")
+    style(fig, title="Stock vs reorder point")
     fig.update_xaxes(title="Reorder point (units)", range=[0, x_max])
     fig.update_yaxes(title="Stock on hand (units)", range=[0, y_max])
     return fig
@@ -93,7 +88,7 @@ def line_detail(plan: pd.DataFrame, store: str, product: str, asof: pd.Timestamp
                     line=dict(color=INK, width=2))
     fig.add_scatter(x=low["date"], y=low["inventory_level"], name="Below reorder point", mode="markers",
                     marker=dict(color=red, size=8, line=dict(color="white", width=1)))
-    style(fig, height=330, title=f"Store {store}, product {product}: last {len(h)} days", legend=True)
+    style(fig, height=330, title=f"{store} · {product}", legend=True)
     fig.update_yaxes(title="Units", rangemode="tozero")
     return fig
 

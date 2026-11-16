@@ -23,79 +23,57 @@ def inject_css() -> None:
         .block-container {{ padding-top: 1.6rem; max-width: 1360px; }}
         footer {{ visibility: hidden; }}
 
-        /* Banner */
-        .banner {{
-            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem 2rem;
-            padding: 1.3rem 1.6rem; margin-bottom: 1rem; border-radius: 14px; color: #fff;
-            background: linear-gradient(120deg, #1C2F4F 0%, {BLUE} 55%, #3F6FA8 100%);
-            box-shadow: 0 6px 20px rgba(43,76,126,0.22);
-        }}
-        .banner h1 {{ font-size: 1.7rem; font-weight: 700; line-height: 1.1; margin: 0; padding: 0; color: #fff; }}
-        .banner .sub {{ opacity: 0.85; margin-top: 0.3rem; font-size: 0.95rem; }}
-        .banner .right {{ display: flex; gap: 0.7rem; flex-wrap: wrap; }}
-        .banner .pill {{
-            background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25);
-            border-radius: 12px; padding: 0.45rem 0.9rem; text-align: left; min-width: 7.5rem;
-        }}
-        .banner .pill .l {{ font-size: 0.75rem; opacity: 0.8; }}
-        .banner .pill .v {{ font-family: 'Archivo', sans-serif; font-weight: 600; font-size: 1.05rem; }}
+        /* Header: title and one muted line */
+        .head {{ display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.2rem 1.5rem;
+                 padding-bottom: 0.7rem; margin-bottom: 0.4rem; border-bottom: 1px solid {GRID}; }}
+        .head h1 {{ font-size: 1.5rem; font-weight: 700; line-height: 1.2; margin: 0; padding: 0; color: {INK}; }}
+        .head .meta {{ color: {MUTED}; font-size: 0.9rem; }}
 
         /* Tabs */
-        button[data-baseweb="tab"] p {{ font-size: 1.02rem; font-weight: 500; }}
-        [data-baseweb="tab-list"] {{ gap: 1.6rem; }}
+        button[data-baseweb="tab"] p {{ font-size: 1rem; font-weight: 500; }}
+        [data-baseweb="tab-list"] {{ gap: 1.4rem; }}
 
-        /* KPI cards */
-        .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.8rem; margin: 0.2rem 0 1rem 0; }}
-        .kpi {{
-            background: #fff; border: 1px solid {GRID}; border-top: 4px solid var(--tone, {BLUE});
-            border-radius: 12px; padding: 0.8rem 1rem; transition: transform .15s ease, box-shadow .15s ease;
-        }}
-        .kpi:hover {{ transform: translateY(-3px); box-shadow: 0 8px 18px rgba(28,43,58,0.10); }}
-        .k-label {{ color: {MUTED}; font-size: 0.82rem; }}
-        .k-value {{
-            font-family: 'Archivo', sans-serif; font-size: 1.85rem; font-weight: 700; line-height: 1.15;
-            font-variant-numeric: tabular-nums; color: var(--tone, {INK});
-        }}
-        .k-note {{ color: {MUTED}; font-size: 0.8rem; }}
+        /* KPIs: flat, value carries the colour */
+        .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; margin: 0.4rem 0 0.9rem 0; }}
+        .kpi {{ background: #fff; border: 1px solid {GRID}; border-radius: 10px; padding: 0.65rem 0.9rem; }}
+        .k-label {{ color: {MUTED}; font-size: 0.8rem; }}
+        .k-value {{ font-family: 'Archivo', sans-serif; font-size: 1.6rem; font-weight: 700; line-height: 1.2;
+                    font-variant-numeric: tabular-nums; color: var(--tone, {INK}); }}
+        .k-note {{ color: {MUTED}; font-size: 0.78rem; min-height: 1.1em; }}
 
         /* Section titles */
-        .section-title {{ font-family: 'Archivo', sans-serif; font-size: 1.05rem; font-weight: 600; margin: 0.8rem 0 0.2rem 0; }}
-        .section-note {{ color: {MUTED}; font-size: 0.88rem; margin-bottom: 0.4rem; }}
+        .section-title {{ font-family: 'Archivo', sans-serif; font-size: 1rem; font-weight: 600; margin: 0.8rem 0 0.2rem 0; }}
+        .section-note {{ color: {MUTED}; font-size: 0.85rem; margin-bottom: 0.4rem; }}
 
         /* Line inspector */
-        .insp {{ background: #fff; border: 1px solid {GRID}; border-radius: 14px; padding: 1rem 1.1rem; margin-bottom: 0.6rem;
-                 box-shadow: 0 2px 10px rgba(28,43,58,0.05); }}
-        .insp .title {{ font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 1.15rem; }}
-        .insp .sub {{ color: {MUTED}; font-size: 0.85rem; margin-bottom: 0.5rem; }}
-        .chip {{ display: inline-block; padding: 0.12rem 0.65rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-right: 0.4rem; }}
-        .probbar {{ display: flex; height: 26px; border-radius: 8px; overflow: hidden; margin: 0.55rem 0 0.3rem 0; }}
-        .probbar span {{ display: flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 600; }}
-        .problabels {{ display: flex; justify-content: space-between; color: {MUTED}; font-size: 0.75rem; }}
-        .why {{ margin-top: 0.7rem; padding: 0.55rem 0.75rem; background: #F5F7F9; border-radius: 8px; font-size: 0.92rem; }}
+        .insp {{ background: #fff; border: 1px solid {GRID}; border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.6rem; }}
+        .insp .title {{ font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 1.1rem; }}
+        .insp .sub {{ margin: 0.25rem 0 0.4rem 0; }}
+        .chip {{ display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; margin-right: 0.4rem; }}
+        .probbar {{ display: flex; height: 22px; border-radius: 6px; overflow: hidden; margin: 0.5rem 0 0.25rem 0; }}
+        .probbar span {{ display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; }}
+        .problabels {{ display: flex; justify-content: space-between; color: {MUTED}; font-size: 0.72rem; }}
+        .why {{ margin-top: 0.6rem; color: {MUTED}; font-size: 0.9rem; }}
 
-        /* Cards for models */
-        .mcard {{ background: #fff; border: 1px solid {GRID}; border-radius: 12px; padding: 0.8rem 1rem; height: 100%;
-                  transition: transform .15s ease, box-shadow .15s ease; }}
-        .mcard:hover {{ transform: translateY(-3px); box-shadow: 0 8px 18px rgba(28,43,58,0.10); }}
-        .mcard.best {{ border: 2px solid {BLUE}; background: #F3F7FC; }}
-        .mcard .n {{ font-family: 'Archivo', sans-serif; font-weight: 600; }}
-        .mcard .f {{ font-family: 'Archivo', sans-serif; font-size: 1.7rem; font-weight: 700; color: {BLUE}; }}
-        .mcard .m {{ color: {MUTED}; font-size: 0.82rem; }}
-        .badge {{ background: {BLUE}; color: #fff; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.5rem;
+        /* Model cards */
+        .mcard {{ background: #fff; border: 1px solid {GRID}; border-radius: 10px; padding: 0.7rem 0.9rem; height: 100%; }}
+        .mcard.best {{ border: 1.5px solid {BLUE}; }}
+        .mcard .n {{ font-family: 'Archivo', sans-serif; font-weight: 600; font-size: 0.95rem; }}
+        .mcard .f {{ font-family: 'Archivo', sans-serif; font-size: 1.5rem; font-weight: 700; color: {BLUE}; }}
+        .mcard .m {{ color: {MUTED}; font-size: 0.8rem; }}
+        .badge {{ background: {BLUE}; color: #fff; font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.5rem;
                   border-radius: 999px; margin-left: 0.4rem; vertical-align: 0.1rem; }}
 
         /* Metrics, sidebar */
-        [data-testid="stMetricValue"] {{ font-family: 'Archivo', sans-serif; font-size: 1.6rem; font-variant-numeric: tabular-nums; }}
-        [data-testid="stMetricLabel"] p {{ color: {MUTED}; }}
-        .brand {{ padding: 0.2rem 0 0.6rem 0; }}
-        .brand .name {{ font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 1.15rem; }}
-        .brand .tag {{ color: {MUTED}; font-size: 0.85rem; }}
-        [data-testid="stSidebar"] [data-testid="stExpander"] details {{ border-color: {GRID}; border-radius: 10px; }}
+        [data-testid="stMetricValue"] {{ font-family: 'Archivo', sans-serif; font-size: 1.3rem; font-variant-numeric: tabular-nums; }}
+        [data-testid="stMetricLabel"] p {{ color: {MUTED}; font-size: 0.82rem; }}
+        .brand {{ font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 1.1rem; padding: 0.2rem 0 0.6rem 0; }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] details {{ border-color: {GRID}; border-radius: 8px; }}
         [data-testid="stSidebar"] [data-testid="stExpander"] summary p {{ font-family: 'Archivo', sans-serif; font-weight: 600; }}
 
         @media (max-width: 640px) {{
             .block-container {{ padding-top: 3.6rem; }}
-            .banner h1 {{ font-size: 1.4rem; }}
+            .head h1 {{ font-size: 1.3rem; }}
             .kpis {{ grid-template-columns: 1fr 1fr; }}
         }}
         </style>

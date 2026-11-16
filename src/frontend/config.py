@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 PROCESSED_FILE = ROOT_DIR / "data" / "processed" / "retail_store_inventory_processed.csv"
 RAW_FILE = ROOT_DIR / "data" / "raw" / "retail_store_inventory.csv"
 MODEL_DIR = ROOT_DIR / "model"     # model/<name>/outputs/ is written by src/backend/pipeline.py
+DEMAND_DIR = MODEL_DIR / "xgboost_demand" / "outputs"   # XGBoost demand model (sizes the orders)
 
 CURRENCY = ""  # the dataset has no currency; set e.g. "RM " to prefix every value shown
 

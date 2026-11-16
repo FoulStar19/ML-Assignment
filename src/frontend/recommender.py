@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 
 from config import CLEAR_EXCESS_SHARE, MIN_TRANSFER, PRIORITY_ORDER
-from theme import money
 
 
 def plan_transfers(lines: pd.DataFrame) -> pd.DataFrame:
@@ -90,24 +89,24 @@ def recommend(lines: pd.DataFrame, transfers: pd.DataFrame, lead: int, over_days
 
 
 def _reason(r: pd.Series, lead: int, over_days: float) -> str:
-    """One short line per recommendation."""
+    """A short fragment per recommendation."""
     a = r["action"]
-    inv, tgt = f"{r['inventory_level']:,.0f}", f"{r['target_level']:,.0f}"
-    chance = f"{r['p_under']:.0%}" if "p_under" in r.index else ""
+    cover = f"{r['days_of_cover']:.1f} d cover"
+    risk = f"{r['p_under']:.0%} risk" if "p_under" in r.index else ""
     if a == "Order now" and r["priority"] == "Critical":
-        return f"{inv} on hand covers {r['days_of_cover']:.1f} days, less than the {lead}-day lead time. Order {r['net_order']:,.0f}."
+        return f"{cover}, under the {lead} d lead time"
     if a == "Order now":
-        return f"{chance} chance of running short. {inv} covers {r['days_of_cover']:.1f} days. Order {r['net_order']:,.0f} to reach {tgt}."
+        return f"{cover} · {risk}"
     if a == "Transfer in":
-        return f"{chance} chance of running short. Take {r['transfer_in']:,} from {r['from_stores']} instead of ordering."
+        return f"Take {r['transfer_in']:,} from {r['from_stores']}"
     if a == "Transfer in + order":
-        return f"{chance} chance of running short. Take {r['transfer_in']:,} from {r['from_stores']}, order {r['net_order']:,.0f}."
+        return f"Take {r['transfer_in']:,} from {r['from_stores']}, order {r['net_order']:,.0f}"
     if a == "Transfer out":
-        return f"{r['excess_units']:,.0f} above target. Send {r['transfer_out']:,} to {r['to_stores']}."
+        return f"Send {r['transfer_out']:,} to {r['to_stores']}"
     if a == "Clear excess":
-        return f"{r['excess_units']:,.0f} above target ({r['excess_share']:.0%} over), about {money(r['excess_value'])}. Consider a promotion."
+        return f"{r['excess_units']:,.0f} over target ({r['excess_share']:.0%})"
     if a == "Pause ordering":
-        return f"{r['days_of_cover']:.1f} days of cover. Hold orders for now."
+        return cover
     if a == "Reorder soon":
-        return f"Reaches the reorder point in about {r['days_to_reorder']:.1f} days. Prepare the next order."
-    return "Healthy."
+        return f"Reorder point in {r['days_to_reorder']:.1f} d"
+    return "Healthy"

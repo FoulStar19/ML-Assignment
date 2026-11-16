@@ -1,0 +1,58 @@
+{
+  "model": "XGBoost demand",
+  "target": "average daily units sold over the next 7 days",
+  "n_iter": 20,
+  "cv_splits": 3,
+  "n_train": 57200,
+  "n_test": 14500,
+  "split": "Train : 2022-01-01 \u2192 2023-07-26\nTest  : 2023-08-03 \u2192 2023-12-25   (7-day purge gap, target = average daily units sold over the next 7 days)",
+  "baseline": {
+    "name": "7-day mean of the supplied forecast",
+    "mae": 45.8394553862069,
+    "rmse": 57.47408593163234,
+    "r2": -0.9983804457496817,
+    "wape": 0.3369632306330531,
+    "bias": 5.213091993103448
+  },
+  "line_average": {
+    "name": "Average of the line in the training period",
+    "mae": 32.72483974646044,
+    "rmse": 40.969317727137046,
+    "r2": -0.015433503868769627,
+    "wape": 0.24055843661341358,
+    "bias": 0.5039435736677113
+  },
+  "default": {
+    "cv_mae": 35.25644187605861,
+    "seconds": 7.6,
+    "test": {
+      "mae": 33.97535472956314,
+      "rmse": 42.40340592129153,
+      "r2": -0.08776607045443408,
+      "wape": 0.24975090116411847,
+      "bias": 0.8475697642359242
+    }
+  },
+  "tuned": {
+    "cv_mae": 33.20684468173123,
+    "seconds": 62.9,
+    "best_params": {
+      "clf__colsample_bytree": 0.8861223846483287,
+      "clf__gamma": 0.0993578407670862,
+      "clf__learning_rate": 0.010189592979395137,
+      "clf__max_depth": 5,
+      "clf__min_child_weight": 3,
+      "clf__n_estimators": 230,
+      "clf__reg_alpha": 0.13615257464006505,
+      "clf__reg_lambda": 3.804968634158325,
+      "clf__subsample": 0.8423839899124046
+    },
+    "test": {
+      "mae": 32.62459315129924,
+      "rmse": 40.7696690448604,
+      "r2": -0.005560945193240352,
+      "wape": 0.23982152959126674,
+      "bias": 0.8715118897536707
+    }
+  }
+}

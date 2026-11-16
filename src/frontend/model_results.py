@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from config import BLUE, MODEL_DIR, STATUS_COLORS
+from config import BLUE, DEMAND_DIR, MODEL_DIR, STATUS_COLORS
 from theme import section, show, style, styled
 
 CLASS_COLORS = {
@@ -76,12 +76,11 @@ def render() -> None:
     order = tuned.sort_values("Macro-F1", ascending=False).index
     for col, name in zip(st.columns(len(order)), order):
         t = tuned.loc[name]
-        badge = '<span class="badge">In use</span>' if name == best else ""
+        badge = '<span class="badge">Status</span>' if name == best else ""
         col.markdown(
             f'<div class="mcard {"best" if name == best else ""}"><div class="n">{name}{badge}</div>'
             f'<div class="f">{t["Macro-F1"]:.3f}</div>'
-            f'<div class="m">macro-F1 · accuracy {t["Accuracy"]:.1%}<br>'
-            f'understock found {t["Understock recall"]:.0%} · overstock found {t["Overstock recall"]:.0%}</div></div>',
+            f'<div class="m">macro-F1 · accuracy {t["Accuracy"]:.1%}</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -127,14 +126,14 @@ def render() -> None:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Accuracy", f"{t['accuracy']:.1%}")
     c2.metric("Macro-F1", f"{t['f1_macro']:.3f}")
-    c3.metric("Understock found", f"{t['per_class']['Understock']['recall']:.0%}")
-    c4.metric("Overstock found", f"{t['per_class']['Overstock']['recall']:.0%}")
+    c3.metric("Understock recall", f"{t['per_class']['Understock']['recall']:.0%}")
+    c4.metric("Overstock recall", f"{t['per_class']['Overstock']['recall']:.0%}")
 
     a, b = st.columns([2, 3])
     with a:
         confusion = folder / "confusion_matrix.png"
         if confusion.exists():
-            st.image(str(confusion), caption="Confusion matrix (rows sum to 100%)")
+            st.image(str(confusion))
     with b:
         plots = [p for p in sorted(folder.glob("*.png")) if p.name != "confusion_matrix.png"]
         if plots:
@@ -145,7 +144,7 @@ def render() -> None:
             if (folder / picked).exists():
                 st.image(str(folder / picked))
 
-    with st.expander("Settings, split and full results"):
+    with st.expander("Details"):
         params = m["tuned"].get("best_params", {})
         if params:
             st.dataframe(
@@ -162,3 +161,27 @@ def render() -> None:
         report = folder / "classification_report.txt"
         if report.exists():
             st.code(report.read_text(), language=None)
+
+
+    _demand_section()
+
+
+def _demand_section() -> None:
+    """XGBoost demand model: how far its forecast misses compared with the methods it can replace."""
+    path = DEMAND_DIR / "demand_metrics.json"
+    if not path.exists():
+        return
+    m = json.loads(path.read_text())
+    t = m["tuned"]["test"]
+    section("Demand model · XGBoost")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Miss", f"{t['wape']:.1%}", f"{(t['wape'] - m['baseline']['wape']) * 100:+.1f} pts vs forecast",
+              delta_color="inverse")
+    c2.metric("Avg miss", f"{t['mae']:.1f} units")
+    c3.metric("Forecast mean", f"{m['baseline']['wape']:.1%}")
+    if "line_average" in m:
+        c4.metric("Line average", f"{m['line_average']['wape']:.1%}")
+    gain = DEMAND_DIR / "gain_importance.png"
+    if gain.exists():
+        with st.expander("Drivers"):
+            st.image(str(gain))

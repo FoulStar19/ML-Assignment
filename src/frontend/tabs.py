@@ -75,18 +75,17 @@ def inspector(ctx, key: str) -> None:
         unsafe_allow_html=True,
     )
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("On hand", f"{row['inventory_level']:,.0f}")
     m2.metric("Cover", f"{row['days_of_cover']:.1f} d")
-    m3.metric("Order", f"{row['net_order']:,.0f}")
+    m3.metric("Demand", f"{row['mu']:,.0f}/d")
+    m4.metric("Order", f"{row['net_order']:,.0f}")
 
     # What-if: change the order and see the cover it buys against the lead time.
     top = int(max(row["target_level"] * 1.5, row["net_order"] * 1.5, 50))
-    qty = st.slider("Try an order quantity", 0, top, int(min(row["net_order"], top)), key=f"{key}_qty_{store}_{product}")
+    qty = st.slider("Order qty", 0, top, int(min(row["net_order"], top)), key=f"{key}_qty_{store}_{product}")
     cover_after = (row["inventory_level"] + qty) / row["mu"]
-    delta = cover_after - ctx.lead
-    st.metric("Cover after order", f"{cover_after:.1f} days",
-              f"{delta:+.1f} vs {ctx.lead}-day lead time", delta_color="normal")
+    st.metric("Cover after order", f"{cover_after:.1f} d", f"{cover_after - ctx.lead:+.1f} d vs lead time")
 
     show(line_detail(ctx.plan, store, product, ctx.asof_date), key=f"{key}_history")
 
@@ -97,31 +96,28 @@ def inspector(ctx, key: str) -> None:
 def tab_overview(ctx):
     lines, recs = ctx.lines, ctx.recs
     kpi_row([
-        ("Critical", f"{ctx.n_critical}", "Stock below half the lead time", "bad" if ctx.n_critical else "good"),
-        ("Understock risk", f"{ctx.n_under}", f"of {ctx.n_lines} lines", "bad" if ctx.n_under else "good"),
-        ("To buy", money(ctx.net_value), f"{ctx.net_units:,.0f} units" + (", after transfers" if ctx.moved_units else ""), ""),
-        ("Excess stock", money(ctx.excess_value), f"{ctx.n_over} overstocked lines", "warn"),
-        ("Healthy", f"{ctx.n_healthy / ctx.n_lines:.0%}", f"{ctx.n_healthy} lines", "good"),
+        ("Critical", f"{ctx.n_critical}", "", "bad" if ctx.n_critical else "good"),
+        ("Understock", f"{ctx.n_under}", f"of {ctx.n_lines} lines", "bad" if ctx.n_under else "good"),
+        ("Overstock", f"{ctx.n_over}", f"{money(ctx.excess_value)} value", "warn"),
+        ("To order", money(ctx.net_value), f"{ctx.net_units:,.0f} units", ""),
     ])
 
     counts = lines["status"].value_counts()
-    options = ["All"] + STATUS_ORDER
     focus = st.segmented_control(
-        "Show", options, default="All", key="focus", label_visibility="collapsed",
+        "Show", ["All"] + STATUS_ORDER, default="All", key="focus", label_visibility="collapsed",
         format_func=lambda o: f"All {len(lines)}" if o == "All" else f"{o} {counts.get(o, 0)}",
     ) or "All"
 
     left, right = st.columns([3, 2], gap="large")
     with left:
-        view = st.segmented_control("Chart", ["Stock map", "Stock vs reorder point"], default="Stock map",
-                                    key="ov_chart", label_visibility="collapsed") or "Stock map"
-        if view == "Stock map":
+        view = st.segmented_control("Chart", ["Map", "Stock vs reorder"], default="Map",
+                                    key="ov_chart", label_visibility="collapsed") or "Map"
+        if view == "Map":
             st.plotly_chart(
                 stock_map(lines, _selected(ctx), focus), theme=None, key="stock_map",
                 config={"displayModeBar": False}, on_select=lambda: _pick_from_map("stock_map"),
                 selection_mode="points",
             )
-            st.caption("Click a square to inspect it.")
         else:
             show(stock_vs_reorder(lines))
 
@@ -129,9 +125,9 @@ def tab_overview(ctx):
         if focus != "All":
             top = top[top["status"] == focus]
         top = top.head(8)
-        section("Top priorities")
+        section("Priorities")
         if top.empty:
-            st.info("Nothing to act on here.")
+            st.caption("Nothing to act on.")
         else:
             table = top[["priority", "action", "store_id", "product_id", "net_order"]].rename(columns={
                 "priority": "Priority", "action": "Action", "store_id": "Store",
@@ -165,24 +161,23 @@ def tab_recommendations(ctx):
     if acts:
         view = view[view["action"].isin(acts)]
     view = view.reset_index(drop=True)
-    table = view[["priority", "action", "store_id", "product_id", "confidence", "inventory_level",
-                  "days_of_cover", "net_order", "transfer", "why"]].rename(columns={
+    table = view[["priority", "action", "store_id", "product_id", "inventory_level",
+                  "days_of_cover", "net_order", "transfer"]].rename(columns={
         "priority": "Priority", "action": "Action", "store_id": "Store", "product_id": "Product",
-        "confidence": "Model", "inventory_level": "On hand", "days_of_cover": "Cover",
-        "net_order": "Order", "transfer": "Transfer", "why": "Why",
+        "inventory_level": "On hand", "days_of_cover": "Cover", "net_order": "Order", "transfer": "Transfer",
     })
 
     left, right = st.columns([3, 2], gap="large")
     with left:
         h1, h2 = st.columns([3, 1], vertical_alignment="center")
         h1.markdown(f"**{len(table)} lines**")
-        h2.download_button("Download CSV", table.round(2).to_csv(index=False),
+        h2.download_button("CSV", table.round(2).to_csv(index=False),
                            file_name=f"actions_{ctx.asof_date:%Y-%m-%d}.csv", mime="text/csv")
         if table.empty:
-            st.info("No lines match these filters.")
+            st.caption("No lines match.")
         else:
             st.dataframe(
-                styled(table, {"Model": "{:.0%}", "On hand": "{:,.0f}", "Cover": "{:.1f}"}, tint_col="Priority"),
+                styled(table, {"On hand": "{:,.0f}", "Cover": "{:.1f}"}, tint_col="Priority"),
                 hide_index=True, key="rec_table", selection_mode="single-row",
                 on_select=lambda: _pick_from_table("rec_table", table),
                 height=min(35 * (len(table) + 1) + 3, 560),
@@ -191,26 +186,19 @@ def tab_recommendations(ctx):
                     "Action": st.column_config.Column(width="medium"),
                     "Store": st.column_config.Column(width="small"),
                     "Product": st.column_config.Column(width="small"),
-                    "Model": st.column_config.ProgressColumn("Model", format="percent", min_value=0, max_value=1, width="small"),
                     "Order": st.column_config.ProgressColumn(
                         "Order", format="%d", width="small", min_value=0, max_value=float(max(table["Order"].max(), 1))),
-                    "Why": st.column_config.TextColumn(width="large"),
+                    "Transfer": st.column_config.TextColumn(width="medium"),
                 },
             )
-        with st.expander(f"Store transfers ({len(transfers)})"):
+        with st.expander(f"Transfers ({len(transfers)})"):
             if transfers.empty:
-                st.caption("No transfers suggested." if ctx.use_transfers else "Transfers are off in the sidebar.")
+                st.caption("None.")
             else:
                 tp = transfers.sort_values("qty", ascending=False).rename(columns={
                     "product_id": "Product", "from_store": "From", "to_store": "To", "qty": "Units", "value": "Value"})
                 st.dataframe(styled(tp, {"Units": "{:,.0f}", "Value": f"{CURRENCY}{{:,.0f}}"}),
                              hide_index=True, height=min(35 * (len(tp) + 1) + 3, 300))
-                st.caption(f"{ctx.moved_units:,} units moved, about {money(ctx.moved_value)} less to buy.")
-        with st.expander("How it works"):
-            st.markdown(
-                "The model flags understock or overstock. Order sizes come from the reorder-point rule: "
-                "top up to the target level. Transfers move surplus to stores that are short."
-            )
     with right:
         inspector(ctx, "ac")
 
@@ -219,12 +207,19 @@ def tab_recommendations(ctx):
 # Trends (demand + stock health)
 # ─────────────────────────────────────────────
 def tab_trends(ctx):
-    hist = ctx.hist
-    if hist.empty:
-        st.info("No rows match the current filters.")
-        return
-    mode = st.segmented_control("View", ["Demand", "Stock health"], default="Demand",
+    f1, f2, f3 = st.columns([2, 3, 3], vertical_alignment="bottom")
+    mode = f1.segmented_control("View", ["Demand", "Stock health"], default="Demand",
                                 key="trend_mode", label_visibility="collapsed") or "Demand"
+    cats = f2.multiselect("Category", sorted(ctx.hist["category"].unique()), key="t_cats", placeholder="All categories")
+    regions = f3.multiselect("Region", sorted(ctx.hist["region"].unique()), key="t_regions", placeholder="All regions")
+    hist = ctx.hist
+    if cats:
+        hist = hist[hist["category"].isin(cats)]
+    if regions:
+        hist = hist[hist["region"].isin(regions)]
+    if hist.empty:
+        st.caption("No rows match.")
+        return
     if mode == "Demand":
         _demand(hist)
     else:
@@ -235,11 +230,11 @@ def _demand(hist: pd.DataFrame) -> None:
     err = hist["forecast_error"]
     wape = err.abs().sum() / max(hist["units_sold"].sum(), 1)
     c1, c2, c3 = st.columns(3)
-    c1.metric("Average miss", f"{err.abs().mean():.1f} units")
-    c2.metric("Error vs sales", f"{wape:.1%}")
-    c3.metric("Bias", f"{err.mean():+.1f} units", help="Units sold minus forecast.")
+    c1.metric("Avg miss", f"{err.abs().mean():.1f} units")
+    c2.metric("Error", f"{wape:.1%}")
+    c3.metric("Bias", f"{err.mean():+.1f} units")
 
-    grain = st.segmented_control("Group by", ["Day", "Week", "Month"], default="Week", key="grain") or "Week"
+    grain = st.segmented_control("Group by", ["Day", "Week", "Month"], default="Week", key="grain", label_visibility="collapsed") or "Week"
     grouper = pd.Grouper(key="date", freq={"Day": "D", "Week": "W", "Month": "MS"}[grain])
     series = hist.groupby(grouper)[["units_sold", "demand_forecast"]].sum()
     days = hist.groupby(grouper)["date"].nunique().replace(0, np.nan)
@@ -283,7 +278,7 @@ def _demand(hist: pd.DataFrame) -> None:
 
 
 def _health(hist: pd.DataFrame) -> None:
-    """What actually happened: the stock status each day turned out to have over the following 7 days."""
+    """The stock status each day turned out to have over the following 7 days."""
     h = hist.dropna(subset=["stock_status"]).copy()
     h["actual"] = h["stock_status"].replace({"Understock": "Understock risk"})
     monthly = (
@@ -293,7 +288,7 @@ def _health(hist: pd.DataFrame) -> None:
     monthly = monthly.div(monthly.sum(axis=1), axis=0).reset_index().melt(id_vars="month", var_name="status", value_name="share")
     fig = px.bar(monthly, x="month", y="share", color="status", color_discrete_map=STATUS_COLORS,
                  category_orders={"status": STATUS_ORDER})
-    style(fig, height=320, title="Actual stock status by month", legend=True)
+    style(fig, height=320, title="Stock status by month", legend=True)
     fig.update_xaxes(title="")
     fig.update_yaxes(title="", tickformat=".0%", range=[0, 1])
     show(fig)
@@ -317,7 +312,7 @@ def _health(hist: pd.DataFrame) -> None:
         fig.update_yaxes(title="")
         show(fig)
     with right:
-        section("Most often understocked")
+        section("Often understocked")
         risk = (
             h.assign(under=(h["actual"] == "Understock risk") * 100.0, over=(h["actual"] == "Overstock") * 100.0)
             .groupby(["store_id", "product_id"], as_index=False)

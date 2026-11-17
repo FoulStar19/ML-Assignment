@@ -1,0 +1,36 @@
+Column,Description
+Transaction_ID,Unique transaction identifier
+Date,Transaction date
+Year,Year extracted from transaction date
+Month,Month extracted from transaction date
+Week,ISO calendar week number
+Day,Day of the month
+Day_Of_Week,Name of the weekday
+Quarter,Business quarter of the year
+Store_ID,Unique store identifier
+Store_Type,Retail store format
+Region,Geographic sales region
+City,City where the transaction occurred
+Product_ID,Unique product identifier
+Product_Category,Main product category
+Product_Subcategory,Product subcategory
+Brand,Product brand name
+Units_Sold,Number of units sold before returns
+Unit_Price,Selling price per unit
+Discount_Percent,Discount percentage applied
+Promotion,Whether promotion was active
+Holiday,Whether transaction occurred during holiday period
+Season,Season of the transaction
+Inventory_Level,Available inventory level
+Competitor_Price,Competitor price for a similar product
+Customer_Footfall,Estimated number of store visitors
+Marketing_Spend,Marketing spend associated with the period
+Weather_Condition,Weather condition at the time of transaction
+Economic_Index,Synthetic economic index representing market conditions
+Online_Orders,Number of online orders during the same period
+Returns,Number of returned units
+Customer_Satisfaction,Customer satisfaction rating from 1 to 5
+Shipping_Time,Shipping time in days
+Supplier_Rating,Supplier rating from 1 to 5
+Sales_Amount,Final sales amount after discount and returns
+Demand_Level,Categorical demand level based on sales amount

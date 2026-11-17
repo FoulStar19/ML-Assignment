@@ -279,7 +279,7 @@ def reorder_columns(df):
         # Time
         'date', 'year', 'month', 'month_name', 'day', 'week', 'weekday', 'day_of_week',
         # Product & location
-        'product_id', 'category', 'store_id', 'region',
+        'product_id', 'product_name', 'category', 'store_id', 'region',
         # Inventory & demand
         'inventory_level', 'units_sold', 'units_ordered', 'demand_forecast',
         'forecast_error', 'stock_cover',

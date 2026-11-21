@@ -175,12 +175,12 @@ def _demand_section() -> None:
     t = m["tuned"]["test"]
     section("Demand model · XGBoost")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Miss", f"{t['wape']:.1%}", f"{(t['wape'] - m['baseline']['wape']) * 100:+.1f} pts vs forecast",
+    c1.metric("Miss", f"{t['wape']:.1%}", f"{(t['wape'] - m['baseline']['wape']) * 100:+.1f} pts vs average",
               delta_color="inverse")
     c2.metric("Avg miss", f"{t['mae']:.1f} units")
-    c3.metric("Forecast mean", f"{m['baseline']['wape']:.1%}")
-    if "line_average" in m:
-        c4.metric("Line average", f"{m['line_average']['wape']:.1%}")
+    c3.metric("Average", f"{m['baseline']['wape']:.1%}")
+    if "subcategory_average" in m:
+        c4.metric("Subcategory average", f"{m['subcategory_average']['wape']:.1%}")
     gain = DEMAND_DIR / "gain_importance.png"
     if gain.exists():
         with st.expander("Drivers"):

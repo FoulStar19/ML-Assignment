@@ -3,15 +3,15 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 PROCESSED_FILE = ROOT_DIR / "data" / "processed" / "retail_store_inventory_processed.csv"
-RAW_FILE = ROOT_DIR / "data" / "raw" / "retail_store_inventory.csv"
+RAW_FILE = ROOT_DIR / "data" / "raw" / "retail_sales_forecast_dataset.csv"
 MODEL_DIR = ROOT_DIR / "model"     # model/<name>/outputs/ is written by src/backend/pipeline.py
 DEMAND_DIR = MODEL_DIR / "xgboost_demand" / "outputs"   # XGBoost demand model (sizes the orders)
 
 CURRENCY = ""  # the dataset has no currency; set e.g. "RM " to prefix every value shown
 
 REQUIRED_COLUMNS = [
-    "date", "store_id", "product_id", "category", "region",
-    "inventory_level", "units_sold", "demand_forecast", "price",
+    "transaction_id", "date", "store_id", "product_id", "category", "product_subcategory", "region",
+    "inventory_level", "units_sold", "price", "discount",
 ]
 
 INK = "#1C2B3A"
@@ -36,7 +36,6 @@ ACTION_ORDER = [
     "Clear excess", "Pause ordering", "Reorder soon",
 ]
 
-MIN_HISTORY_DAYS = 7      # days of history a line needs before it gets a plan
+MIN_HISTORY_RECORDS = 30  # records a subcategory needs before its average demand is trusted (used without the demand model)
 MIN_TRANSFER = 10         # smallest store-to-store transfer worth suggesting (units)
-CLEAR_EXCESS_SHARE = 0.6  # surplus this far above target level triggers "Clear excess"
-DETAIL_DAYS = 90
+CLEAR_EXCESS_SHARE = 0.6  # surplus this far above the overstock level triggers "Clear excess"

@@ -9,7 +9,7 @@ import plotly.express as px
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from charts import line_detail, stock_map, stock_vs_reorder
+from charts import line_detail, map_cells, stock_map, stock_vs_reorder
 from config import (ACTION_ORDER, BLUE, CURRENCY, INK, MUTED, PRIORITY_COLORS, PRIORITY_ORDER,
                     PRIORITY_TINT, STATUS_COLORS, STATUS_ORDER)
 from theme import chip, kpi_row, money, prob_bar, section, show, style, styled
@@ -31,14 +31,19 @@ def _selected(ctx) -> tuple[str, str]:
     return sel
 
 
-def _pick_from_map(key: str) -> None:
+def _pick_from_map(key: str, lines: pd.DataFrame) -> None:
     pts = st.session_state.get(key, {}).get("selection", {}).get("points", [])
     if pts:
-        st.session_state["sel_line"] = (pts[0]["y"], pts[0]["x"])      # y = store, x = product
+        cells = map_cells(lines)                                       # the grid the map was drawn from
+        hit = cells[(cells["x"] == round(pts[0]["x"])) & (cells["y"] == round(pts[0]["y"]))]
+        if not hit.empty:
+            st.session_state["sel_line"] = (hit.iloc[0]["store_id"], hit.iloc[0]["product_id"])
 
 
-def _pick_from_pickers(key: str) -> None:
-    st.session_state["sel_line"] = (st.session_state[f"{key}_store"], st.session_state[f"{key}_product"])
+def _pick_from_pickers(key: str, recs: pd.DataFrame) -> None:
+    store, product = st.session_state[f"{key}_store"], st.session_state[f"{key}_product"]
+    owned = sorted(recs.loc[recs["store_id"] == store, "product_id"])  # a new store keeps the product only if it has it
+    st.session_state["sel_line"] = (store, product if product in owned else owned[0])
 
 
 def _pick_from_table(key: str, frame: pd.DataFrame) -> None:
@@ -52,15 +57,15 @@ def _pick_from_table(key: str, frame: pd.DataFrame) -> None:
 # Line inspector (used on Overview and Actions)
 # ─────────────────────────────────────────────
 def inspector(ctx, key: str) -> None:
-    """Model verdict, probabilities, recommended action, an order what-if and the stock history."""
+    """Model verdict, probabilities, recommended action, an order what-if and the stock levels."""
     store, product = _selected(ctx)
     stores = sorted(ctx.recs["store_id"].unique())
-    products = sorted(ctx.recs["product_id"].unique())
+    products = sorted(ctx.recs.loc[ctx.recs["store_id"] == store, "product_id"])
     # Keep both pickers on the shared choice (a map or table click changes it); their own changes come back via on_change.
     st.session_state[f"{key}_store"], st.session_state[f"{key}_product"] = store, product
     c1, c2 = st.columns(2)
-    c1.selectbox("Store", stores, key=f"{key}_store", on_change=_pick_from_pickers, args=(key,))
-    c2.selectbox("Product", products, key=f"{key}_product", on_change=_pick_from_pickers, args=(key,))
+    c1.selectbox("Store", stores, key=f"{key}_store", on_change=_pick_from_pickers, args=(key, ctx.recs))
+    c2.selectbox("Product", products, key=f"{key}_product", on_change=_pick_from_pickers, args=(key, ctx.recs))
 
     row = ctx.recs[(ctx.recs["store_id"] == store) & (ctx.recs["product_id"] == product)].iloc[0]
     bg, fg = STATUS_TINT[row["status"]]
@@ -87,7 +92,7 @@ def inspector(ctx, key: str) -> None:
     cover_after = (row["inventory_level"] + qty) / row["mu"]
     st.metric("Cover after order", f"{cover_after:.1f} d", f"{cover_after - ctx.lead:+.1f} d vs lead time")
 
-    show(line_detail(ctx.plan, store, product, ctx.asof_date), key=f"{key}_history")
+    show(line_detail(row, ctx.over_days), key=f"{key}_history")
 
 
 # ─────────────────────────────────────────────
@@ -115,7 +120,7 @@ def tab_overview(ctx):
         if view == "Map":
             st.plotly_chart(
                 stock_map(lines, _selected(ctx), focus), theme=None, key="stock_map",
-                config={"displayModeBar": False}, on_select=lambda: _pick_from_map("stock_map"),
+                config={"displayModeBar": False}, on_select=lambda: _pick_from_map("stock_map", lines),
                 selection_mode="points",
             )
         else:
@@ -195,8 +200,11 @@ def tab_recommendations(ctx):
             if transfers.empty:
                 st.caption("None.")
             else:
-                tp = transfers.sort_values("qty", ascending=False).rename(columns={
-                    "product_id": "Product", "from_store": "From", "to_store": "To", "qty": "Units", "value": "Value"})
+                tp = transfers.sort_values("qty", ascending=False).assign(
+                    From=lambda t: t["from_store"] + " · " + t["from_product"],
+                    To=lambda t: t["to_store"] + " · " + t["to_product"],
+                )[["product_subcategory", "From", "To", "qty", "value"]].rename(columns={
+                    "product_subcategory": "Subcategory", "qty": "Units", "value": "Value"})
                 st.dataframe(styled(tp, {"Units": "{:,.0f}", "Value": f"{CURRENCY}{{:,.0f}}"}),
                              hide_index=True, height=min(35 * (len(tp) + 1) + 3, 300))
     with right:
@@ -236,14 +244,14 @@ def _demand(hist: pd.DataFrame) -> None:
 
     grain = st.segmented_control("Group by", ["Day", "Week", "Month"], default="Week", key="grain", label_visibility="collapsed") or "Week"
     grouper = pd.Grouper(key="date", freq={"Day": "D", "Week": "W", "Month": "MS"}[grain])
-    series = hist.groupby(grouper)[["units_sold", "demand_forecast"]].sum()
+    series = hist.groupby(grouper)[["units_sold", "mu"]].sum()
     days = hist.groupby(grouper)["date"].nunique().replace(0, np.nan)
     series = series.div(days, axis=0).dropna()
-    gap = series["demand_forecast"] - series["units_sold"]
+    gap = series["mu"] - series["units_sold"]
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.08)
     fig.add_scatter(x=series.index, y=series["units_sold"], name="Sold", line=dict(color=INK, width=2), row=1, col=1)
-    fig.add_scatter(x=series.index, y=series["demand_forecast"], name="Forecast",
+    fig.add_scatter(x=series.index, y=series["mu"], name="Forecast",
                     line=dict(color=BLUE, width=2, dash="dash"), row=1, col=1)
     fig.add_bar(x=gap.index, y=gap, showlegend=False,
                 marker_color=[STATUS_COLORS["Overstock"] if v >= 0 else STATUS_COLORS["Understock risk"] for v in gap],
@@ -263,8 +271,8 @@ def _demand(hist: pd.DataFrame) -> None:
         fig.update_yaxes(title="")
         show(fig)
     with b:
-        dim = st.segmented_control("Accuracy by", ["category", "store_id", "region"], default="category",
-                                   key="acc_dim", format_func=lambda c: {"category": "Category", "store_id": "Store",
+        dim = st.segmented_control("Accuracy by", ["category", "store_type", "region"], default="category",
+                                   key="acc_dim", format_func=lambda c: {"category": "Category", "store_type": "Store type",
                                                                          "region": "Region"}[c]) or "category"
         acc = hist.groupby(dim).apply(
             lambda g: g["forecast_error"].abs().sum() / max(g["units_sold"].sum(), 1), include_groups=False,
@@ -278,7 +286,7 @@ def _demand(hist: pd.DataFrame) -> None:
 
 
 def _health(hist: pd.DataFrame) -> None:
-    """The stock status each day turned out to have over the following 7 days."""
+    """The stock status each record turned out to have (stock cover against the units sold)."""
     h = hist.dropna(subset=["stock_status"]).copy()
     h["actual"] = h["stock_status"].replace({"Understock": "Understock risk"})
     monthly = (
@@ -298,12 +306,12 @@ def _health(hist: pd.DataFrame) -> None:
         measure = st.segmented_control("Heatmap", ["Understock", "Overstock", "Cover days"], default="Understock",
                                        key="heat") or "Understock"
         if measure == "Cover days":
-            values, fmt, colour = h["forward_cover_days"].clip(upper=10), ".1f", BLUE
+            values, fmt, colour = h["stock_cover"].clip(upper=60), ".0f", BLUE
         elif measure == "Understock":
             values, fmt, colour = (h["actual"] == "Understock risk").astype(float), ".0%", STATUS_COLORS["Understock risk"]
         else:
             values, fmt, colour = (h["actual"] == "Overstock").astype(float), ".0%", STATUS_COLORS["Overstock"]
-        pivot = h.assign(v=values).pivot_table(index="store_id", columns="category", values="v", aggfunc="mean")
+        pivot = h.assign(v=values).pivot_table(index="store_type", columns="category", values="v", aggfunc="mean")
         fig = px.imshow(pivot, text_auto=fmt, aspect="auto", color_continuous_scale=["#FFFFFF", colour],
                         zmin=0, zmax=float(pivot.max().max()) * 1.3)
         fig.update_coloraxes(showscale=False)
@@ -315,10 +323,10 @@ def _health(hist: pd.DataFrame) -> None:
         section("Often understocked")
         risk = (
             h.assign(under=(h["actual"] == "Understock risk") * 100.0, over=(h["actual"] == "Overstock") * 100.0)
-            .groupby(["store_id", "product_id"], as_index=False)
+            .groupby("product_subcategory", as_index=False)
             .agg(under=("under", "mean"), over=("over", "mean"))
             .sort_values("under", ascending=False).head(8)
-            .rename(columns={"store_id": "Store", "product_id": "Product", "under": "Understock", "over": "Overstock"})
+            .rename(columns={"product_subcategory": "Subcategory", "under": "Understock", "over": "Overstock"})
         )
         st.dataframe(risk, hide_index=True, column_config={
             "Understock": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),

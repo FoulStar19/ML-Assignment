@@ -3,7 +3,6 @@ import os
 
 from data_loading import data_load
 from data_cleaning import data_clean
-from data_generator import generate_product_names
 from data_transforming import data_transform
 from data_modeling import data_model
 
@@ -11,10 +10,9 @@ from data_modeling import data_model
 # 0. FILE PATHS
 # ─────────────────────────────────────────────
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-RAW_DATA_FILE = os.path.join(ROOT_DIR, "data", "raw", "retail_store_inventory.csv")
+RAW_DATA_FILE = os.path.join(ROOT_DIR, "data", "raw", "retail_sales_forecast_dataset.csv")
 PROCESSED_DATA_DIR = os.path.join(ROOT_DIR, "data", "processed")
 PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, "retail_store_inventory_processed.csv")
-PRODUCT_CATALOG_FILE = os.path.join(PROCESSED_DATA_DIR, "product_catalog.csv")
 
 
 def run_pipeline(train_models=False, n_iter=20, cv_splits=3):
@@ -32,23 +30,18 @@ def run_pipeline(train_models=False, n_iter=20, cv_splits=3):
     df_cleaned = data_clean(df_loaded)
 
     # ─────────────────────────────────────────────
-    # 3. PRODUCT NAMES
-    # ─────────────────────────────────────────────
-    df_cleaned = generate_product_names(df_cleaned, catalog_file=PRODUCT_CATALOG_FILE)
-
-    # ─────────────────────────────────────────────
-    # 4. DATA TRANSFORMATION
+    # 3. DATA TRANSFORMATION
     # ─────────────────────────────────────────────
     df_transformed = data_transform(df_cleaned)
 
     # ─────────────────────────────────────────────
-    # 5. SAVE PROCESSED DATA
+    # 4. SAVE PROCESSED DATA
     # ─────────────────────────────────────────────
     df_transformed.to_csv(PROCESSED_DATA_FILE, index=False)
     print(f"Processed data saved to {PROCESSED_DATA_FILE}\n")
 
     # ─────────────────────────────────────────────
-    # 6. MODEL TRAINING, TUNING AND EVALUATION
+    # 5. MODEL TRAINING, TUNING AND EVALUATION
     # ─────────────────────────────────────────────
     if train_models:
         data_model(PROCESSED_DATA_FILE, n_iter=n_iter, cv_splits=cv_splits)

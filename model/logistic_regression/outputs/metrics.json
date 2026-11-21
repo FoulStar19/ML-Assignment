@@ -2,81 +2,81 @@
   "model": "Logistic Regression (Baseline)",
   "n_iter": 20,
   "cv_splits": 3,
-  "n_train": 57200,
-  "n_test": 14500,
-  "split": "Train : 2022-01-01 \u2192 2023-07-26\nTest  : 2023-08-03 \u2192 2023-12-25   (7-day purge gap, target = stock status over the next 7 days)",
+  "n_train": 17471,
+  "n_test": 7529,
+  "split": "Train : 2023-01-01 \u2192 2025-10-18\nTest  : 2025-10-19 \u2192 2026-12-31   (most recent 30% of the dates, target = stock status of the record)",
   "default": {
-    "cv_f1_macro_mean": 0.727853428784638,
-    "cv_f1_macro_std": 0.0022702629596863407,
-    "seconds": 3.9,
+    "cv_f1_macro_mean": 0.7095755340577425,
+    "cv_f1_macro_std": 0.0015061527522551282,
+    "seconds": 1.5,
     "test": {
-      "accuracy": 0.7455862068965518,
-      "balanced_accuracy": 0.7259150002607709,
-      "precision_macro": 0.7393347497537442,
-      "recall_macro": 0.7259150002607709,
-      "f1_macro": 0.7316018111640593,
-      "f1_weighted": 0.7430141036941752,
-      "mcc": 0.56010311059254,
+      "accuracy": 0.7862930003984593,
+      "balanced_accuracy": 0.7001789935534978,
+      "precision_macro": 0.7676512352727679,
+      "recall_macro": 0.7001789935534978,
+      "f1_macro": 0.7276846253146473,
+      "f1_weighted": 0.7801174015468669,
+      "mcc": 0.5769559241068772,
       "per_class": {
         "Understock": {
-          "precision": 0.8110714285714286,
-          "recall": 0.8084727661089356,
-          "f1": 0.809770012479943,
-          "support": 2809
+          "precision": 0.7775100401606426,
+          "recall": 0.6571622539035981,
+          "f1": 0.7122884473877852,
+          "support": 1473
         },
         "Healthy": {
-          "precision": 0.7598929236499069,
-          "recall": 0.8007113073338239,
-          "f1": 0.7797683028782993,
-          "support": 8154
+          "precision": 0.7994722955145118,
+          "recall": 0.8878191712013395,
+          "f1": 0.8413328044426814,
+          "support": 4778
         },
         "Overstock": {
-          "precision": 0.6470398970398971,
-          "recall": 0.5685609273395533,
-          "f1": 0.6052671181339353,
-          "support": 3537
+          "precision": 0.7259713701431493,
+          "recall": 0.5555555555555556,
+          "f1": 0.6294326241134752,
+          "support": 1278
         }
       },
-      "roc_auc_ovr_macro": 0.8914112460843434
+      "roc_auc_ovr_macro": 0.8984239923409086
     }
   },
   "tuned": {
-    "cv_f1_macro_mean": 0.728418798344515,
-    "cv_f1_macro_std": 0.0020213907166348457,
-    "seconds": 26.3,
+    "cv_f1_macro_mean": 0.710286075589812,
+    "cv_f1_macro_std": 0.0013243852474819232,
+    "seconds": 13.0,
     "best_params": {
-      "clf__C": 0.16949768237884735,
+      "clf__C": 73.92266140516048,
       "clf__class_weight": null
     },
     "test": {
-      "accuracy": 0.7457241379310345,
-      "balanced_accuracy": 0.7256856138837371,
-      "precision_macro": 0.7396269266753351,
-      "recall_macro": 0.7256856138837371,
-      "f1_macro": 0.7316023142691669,
-      "f1_weighted": 0.7431297271913447,
-      "mcc": 0.5601972922276975,
+      "accuracy": 0.7866914596892017,
+      "balanced_accuracy": 0.7012054715318671,
+      "precision_macro": 0.767910927381361,
+      "recall_macro": 0.7012054715318671,
+      "f1_macro": 0.72845946425781,
+      "f1_weighted": 0.780609324964496,
+      "mcc": 0.5779344869192595,
       "per_class": {
         "Understock": {
-          "precision": 0.8110912343470483,
-          "recall": 0.8070487718049127,
-          "f1": 0.8090649536045682,
-          "support": 2809
+          "precision": 0.77822257806245,
+          "recall": 0.659877800407332,
+          "f1": 0.7141807494489346,
+          "support": 1473
         },
         "Healthy": {
-          "precision": 0.7597070448732853,
-          "recall": 0.8014471425067452,
-          "f1": 0.7800190976366674,
-          "support": 8154
+          "precision": 0.8,
+          "recall": 0.8874005860192549,
+          "f1": 0.841436793014487,
+          "support": 4778
         },
         "Overstock": {
-          "precision": 0.648082500805672,
-          "recall": 0.5685609273395533,
-          "f1": 0.605722891566265,
-          "support": 3537
+          "precision": 0.7255102040816327,
+          "recall": 0.5563380281690141,
+          "f1": 0.6297608503100088,
+          "support": 1278
         }
       },
-      "roc_auc_ovr_macro": 0.8913526031254696
+      "roc_auc_ovr_macro": 0.8984307529203571
     }
   }
 }

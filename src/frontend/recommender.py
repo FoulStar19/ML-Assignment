@@ -1,4 +1,4 @@
-"""Transfers between stores and one prioritised action per store-product line."""
+"""Transfers between stores and one prioritised action per record."""
 import numpy as np
 import pandas as pd
 
@@ -6,27 +6,31 @@ from config import CLEAR_EXCESS_SHARE, MIN_TRANSFER, PRIORITY_ORDER
 
 
 def plan_transfers(lines: pd.DataFrame) -> pd.DataFrame:
-    """Match surplus stock to shortfalls for the same product across stores.
+    """Match surplus stock to shortfalls within the same product subcategory across stores.
 
-    Surplus = units above a store's target level. Shortfall = units needed to
-    get a store back to target. Largest shortfalls are served first.
+    Product IDs are only labels in this data (one ID is sold under many categories), so the product subcategory
+    is the closest thing to "the same product". Surplus = units above a record's target level. Shortfall = units
+    needed to get a record back to target. Largest shortfalls are served first.
     """
-    cols = ["product_id", "from_store", "to_store", "qty", "value"]
+    cols = ["product_subcategory", "from_store", "from_product", "to_store", "to_product", "qty", "value"]
     rows = []
-    for product, g in lines.groupby("product_id"):
+    for sub, g in lines.groupby("product_subcategory", observed=True):
         need = g[g["order_qty"] > 0].sort_values("order_qty", ascending=False)
         surplus = g[g["excess_units"] > 0]
         if need.empty or surplus.empty:
             continue
-        avail = dict(zip(surplus["store_id"], surplus["excess_units"].astype(int)))
-        for _, n in need.iterrows():
-            remaining = int(n["order_qty"])
+        avail = {(r.store_id, r.product_id): int(r.excess_units) for r in surplus.itertuples()}
+        for n in need.itertuples():
+            remaining = int(n.order_qty)
             for src in sorted(avail, key=avail.get, reverse=True):
+                if src[0] == n.store_id:                       # a store cannot send stock to itself
+                    continue
                 qty = min(remaining, avail[src])
                 if qty < MIN_TRANSFER:
                     continue
-                rows.append({"product_id": product, "from_store": src, "to_store": n["store_id"],
-                             "qty": qty, "value": qty * n["avg_price"]})
+                rows.append({"product_subcategory": sub, "from_store": src[0], "from_product": src[1],
+                             "to_store": n.store_id, "to_product": n.product_id,
+                             "qty": qty, "value": qty * n.price})
                 avail[src] -= qty
                 remaining -= qty
                 if remaining <= 0:
@@ -35,16 +39,16 @@ def plan_transfers(lines: pd.DataFrame) -> pd.DataFrame:
 
 
 def recommend(lines: pd.DataFrame, transfers: pd.DataFrame, lead: int, over_days: float, watch_days: float) -> pd.DataFrame:
-    """One prioritised action per store-product line, with a plain-language reason."""
+    """One prioritised action per record, with a plain-language reason."""
     d = lines.copy().reset_index(drop=True)
     d["transfer_in"], d["transfer_out"] = 0, 0
     d["from_stores"], d["to_stores"] = "", ""
     if not transfers.empty:
         idx = pd.MultiIndex.from_frame(d[["store_id", "product_id"]])
-        tin = transfers.groupby(["to_store", "product_id"]).agg(
-            qty=("qty", "sum"), who=("from_store", lambda s: ", ".join(s)))
-        tout = transfers.groupby(["from_store", "product_id"]).agg(
-            qty=("qty", "sum"), who=("to_store", lambda s: ", ".join(s)))
+        t = transfers.assign(from_label=transfers["from_store"] + " · " + transfers["from_product"],
+                             to_label=transfers["to_store"] + " · " + transfers["to_product"])
+        tin = t.groupby(["to_store", "to_product"]).agg(qty=("qty", "sum"), who=("from_label", lambda s: ", ".join(s)))
+        tout = t.groupby(["from_store", "from_product"]).agg(qty=("qty", "sum"), who=("to_label", lambda s: ", ".join(s)))
         tin.index.names = tout.index.names = ["store_id", "product_id"]
         d["transfer_in"] = tin["qty"].reindex(idx).fillna(0).astype(int).to_numpy()
         d["from_stores"] = tin["who"].reindex(idx).fillna("").to_numpy()
@@ -52,7 +56,7 @@ def recommend(lines: pd.DataFrame, transfers: pd.DataFrame, lead: int, over_days
         d["to_stores"] = tout["who"].reindex(idx).fillna("").to_numpy()
 
     d["net_order"] = (d["order_qty"] - d["transfer_in"]).clip(lower=0)
-    d["net_order_value"] = d["net_order"] * d["avg_price"]
+    d["net_order_value"] = d["net_order"] * d["price"]
     d["days_to_reorder"] = ((d["inventory_level"] - d["reorder_point"]) / d["mu"]).clip(lower=0)
     d["excess_share"] = d["excess_units"] / d["target_level"]
 

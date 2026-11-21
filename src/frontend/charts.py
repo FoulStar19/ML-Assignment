@@ -1,7 +1,8 @@
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-from config import BLUE, DETAIL_DAYS, INK, MUTED, STATUS_COLORS, STATUS_ORDER
+from config import BLUE, INK, STATUS_COLORS, STATUS_ORDER
 from theme import style
 
 
@@ -11,39 +12,52 @@ def _fade(hex_colour: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+def map_cells(lines: pd.DataFrame) -> pd.DataFrame:
+    """Place every line in a grid: grouped by status, most confident calls first. Adds columns x (column) and y (row)."""
+    order = {s: i for i, s in enumerate(STATUS_ORDER)}
+    cells = (lines.assign(_s=lines["status"].map(order))
+             .sort_values(["_s", "confidence", "store_id", "product_id"], ascending=[True, False, True, True])
+             .drop(columns="_s").reset_index(drop=True))
+    ncols = max(8, int(np.ceil(np.sqrt(len(cells) * 2.4))))
+    cells["x"] = cells.index % ncols
+    cells["y"] = cells.index // ncols
+    return cells
+
+
 def stock_map(lines: pd.DataFrame, selected: tuple | None, focus: str = "All") -> go.Figure:
-    """One square per store-product line, coloured by the model's call. Click a square to inspect it."""
-    stores = sorted(lines["store_id"].unique())
-    products = sorted(lines["product_id"].unique())
+    """One square per store-product line, coloured by the model's call. Click a square to inspect it.
+
+    Stores and products are too many to use as axes, so the squares fill a grid, grouped by status.
+    """
+    cells = map_cells(lines)
+    nrows, ncols = int(cells["y"].max()) + 1, int(cells["x"].max()) + 1
+    size = int(max(6, min(27, 280 / nrows, 620 / ncols) - 2))
     fig = go.Figure()
     for status in STATUS_ORDER:
-        s = lines[lines["status"] == status]
+        s = cells[cells["status"] == status]
         if s.empty:
             continue
         colour = STATUS_COLORS[status] if focus in ("All", status) else _fade(STATUS_COLORS[status], 0.16)
         fig.add_trace(go.Scatter(
-            x=s["product_id"], y=s["store_id"], mode="markers", name=status,
-            marker=dict(symbol="square", size=27, color=colour, line=dict(color="white", width=1)),
-            customdata=s[["confidence", "inventory_level", "order_qty"]].to_numpy(),
-            hovertemplate=("<b>%{y} · %{x}</b><br>" + status + ", %{customdata[0]:.0%} sure<br>"
-                           "On hand %{customdata[1]:,.0f}, order %{customdata[2]:,.0f}<extra></extra>"),
+            x=s["x"], y=s["y"], mode="markers", name=status,
+            marker=dict(symbol="square", size=size, color=colour, line=dict(color="white", width=1)),
+            customdata=s[["store_id", "product_id", "confidence", "inventory_level", "order_qty"]].to_numpy(),
+            hovertemplate=("<b>%{customdata[0]} · %{customdata[1]}</b><br>" + status + ", %{customdata[2]:.0%} sure<br>"
+                           "On hand %{customdata[3]:,.0f}, order %{customdata[4]:,.0f}<extra></extra>"),
             selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)),
         ))
     if selected is not None:
-        sel = lines[(lines["store_id"] == selected[0]) & (lines["product_id"] == selected[1])]
+        sel = cells[(cells["store_id"] == selected[0]) & (cells["product_id"] == selected[1])]
         if not sel.empty:
             fig.add_trace(go.Scatter(
-                x=sel["product_id"], y=sel["store_id"], mode="markers", showlegend=False, hoverinfo="skip",
-                marker=dict(symbol="square-open", size=37, color=INK, line=dict(color=INK, width=3)),
+                x=sel["x"], y=sel["y"], mode="markers", showlegend=False, hoverinfo="skip",
+                marker=dict(symbol="square-open", size=size + 10, color=INK, line=dict(color=INK, width=3)),
                 selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)),
             ))
     style(fig, height=360, legend=True)
     fig.update_layout(margin=dict(l=8, r=8, t=40, b=8), clickmode="event+select")
-    fig.update_xaxes(categoryorder="array", categoryarray=products, tickvals=products,
-                     ticktext=[str(int(p[1:])) if p[1:].isdigit() else p for p in products],
-                     title="Product", showgrid=False, fixedrange=True)
-    fig.update_yaxes(categoryorder="array", categoryarray=stores, autorange="reversed",
-                     title="", showgrid=False, fixedrange=True)
+    fig.update_xaxes(range=[-0.7, ncols - 0.3], visible=False, showgrid=False, fixedrange=True)
+    fig.update_yaxes(range=[nrows - 0.3, -0.7], visible=False, showgrid=False, fixedrange=True)
     return fig
 
 
@@ -73,23 +87,22 @@ def stock_vs_reorder(lines: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def line_detail(plan: pd.DataFrame, store: str, product: str, asof: pd.Timestamp) -> go.Figure:
-    h = plan[(plan["store_id"] == store) & (plan["product_id"] == product) & (plan["date"] <= asof)].tail(DETAIL_DAYS)
-    low = h[h["inventory_level"] <= h["reorder_point"]]
-    red = STATUS_COLORS["Understock risk"]
-    fig = go.Figure()
-    fig.add_scatter(x=h["date"], y=h["target_level"], name="Target level",
-                    line=dict(color=BLUE, width=1.5, dash="dot"))
-    fig.add_scatter(x=h["date"], y=h["reorder_point"], name="Reorder point",
-                    line=dict(color=red, width=1.5, dash="dash"))
-    fig.add_scatter(x=h["date"], y=h["units_sold"], name="Units sold",
-                    line=dict(color="#A9B5C1", width=1.2))
-    fig.add_scatter(x=h["date"], y=h["inventory_level"], name="Stock on hand",
-                    line=dict(color=INK, width=2))
-    fig.add_scatter(x=low["date"], y=low["inventory_level"], name="Below reorder point", mode="markers",
-                    marker=dict(color=red, size=8, line=dict(color="white", width=1)))
-    style(fig, height=330, title=f"{store} · {product}", legend=True)
+def line_detail(row: pd.Series, over_days: float) -> go.Figure:
+    """The selected line's stock against its demand and the levels that decide its status."""
+    red, amber = STATUS_COLORS["Understock risk"], STATUS_COLORS["Overstock"]
+    bars = [
+        ("Units sold", row["units_sold"], "#A9B5C1"),
+        ("Stock on hand", row["inventory_level"], INK),
+        ("Reorder point", row["reorder_point"], red),
+        ("Target level", row["target_level"], BLUE),
+        ("Overstock level", row["mu"] * over_days, amber),
+    ]
+    fig = go.Figure(go.Bar(
+        x=[b[0] for b in bars], y=[b[1] for b in bars], marker_color=[b[2] for b in bars],
+        text=[f"{b[1]:,.0f}" for b in bars], textposition="outside", cliponaxis=False,
+        hovertemplate="%{x}: %{y:,.0f} units<extra></extra>",
+    ))
+    style(fig, height=330, title=f"{row['store_id']} · {row['product_id']} · {row['date']:%d %b %Y}")
     fig.update_yaxes(title="Units", rangemode="tozero")
+    fig.update_xaxes(title="")
     return fig
-
-

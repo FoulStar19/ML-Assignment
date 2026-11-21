@@ -1,77 +1,69 @@
 """Loading the processed data and the reorder-point / order-up-to policy."""
+import sys
 from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import MIN_HISTORY_DAYS, PROCESSED_FILE, RAW_FILE
+from config import MIN_HISTORY_RECORDS, PROCESSED_FILE, ROOT_DIR
 
+if str(ROOT_DIR / "src" / "backend") not in sys.path:      # the pipeline code lives outside the frontend folder
+    sys.path.insert(0, str(ROOT_DIR / "src" / "backend"))
 
-def prepare_raw(raw: pd.DataFrame) -> pd.DataFrame:
-    """Minimal version of the pipeline, used only if the processed CSV is missing."""
-    df = raw.copy()
-    df.columns = (
-        df.columns.str.strip().str.lower()
-        .str.replace(r"[^0-9a-z]+", "_", regex=True).str.strip("_")
-    )
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df = df.dropna(subset=["date"])
-    df["forecast_error"] = df["units_sold"] - df["demand_forecast"]
-    return df
+from data_transforming import UNDERSTOCK_COVER_DAYS  # noqa: E402  (the same band the models were trained on)
 
 
 @st.cache_data(show_spinner="Loading inventory data...")
 def load_data() -> pd.DataFrame:
-    if PROCESSED_FILE.exists():
-        df = pd.read_csv(PROCESSED_FILE, parse_dates=["date"])
-    elif RAW_FILE.exists():
-        df = prepare_raw(pd.read_csv(RAW_FILE))
-    else:
+    """The processed records, oldest first. One record = one sale of a product in a store on a date."""
+    if not PROCESSED_FILE.exists():
         return pd.DataFrame()
-    if "forecast_error" not in df.columns and {"units_sold", "demand_forecast"} <= set(df.columns):
-        df["forecast_error"] = df["units_sold"] - df["demand_forecast"]
-    return df.sort_values(["store_id", "product_id", "date"]).reset_index(drop=True)
+    df = pd.read_csv(PROCESSED_FILE, parse_dates=["date"])
+    return df.sort_values(["date", "transaction_id"]).reset_index(drop=True)
 
 
-@st.cache_data(show_spinner="Estimating demand for each store-product line...")
-def demand_stats(lookback: int) -> pd.DataFrame:
-    """Rolling expected demand (mu) and forecast-error spread (sigma) per line.
+@st.cache_data(show_spinner="Estimating demand for each record...")
+def demand_stats() -> pd.DataFrame:
+    """Expected demand (mu) and its spread (sigma) for every record, used when the XGBoost demand model is off.
 
-    mu uses demand_forecast. To use a trained model instead, replace that
-    column's values with the model's predictions and everything below follows.
-    sigma uses yesterday's errors and earlier, so a day's plan never sees its own outcome.
+    Store and product IDs are only labels in this data (they carry no history), so demand is estimated from
+    the records of the same product subcategory that come before the record. A record never sees its own
+    outcome. With the demand model on, its forecast replaces mu and sigma (see predictor.with_model_demand).
     """
     df = load_data()
-    g = df.groupby(["store_id", "product_id"], sort=False)
+    g = df.groupby("product_subcategory", sort=False)["units_sold"]
     out = df.copy()
-    out["mu"] = g["demand_forecast"].transform(
-        lambda s: s.rolling(lookback, min_periods=MIN_HISTORY_DAYS).mean()
+    out["mu"] = g.transform(
+        lambda s: s.shift(1).expanding(min_periods=MIN_HISTORY_RECORDS).mean()
     ).clip(lower=1)
-    out["sigma"] = g["forecast_error"].transform(
-        lambda s: s.shift(1).rolling(lookback, min_periods=MIN_HISTORY_DAYS).std()
-    )
-    out["avg_price"] = g["price"].transform(lambda s: s.rolling(lookback, min_periods=1).mean())
+    out["sigma"] = g.transform(lambda s: s.shift(1).expanding(min_periods=MIN_HISTORY_RECORDS).std())
     return out.dropna(subset=["mu", "sigma"]).reset_index(drop=True)
 
 
 def apply_policy(d: pd.DataFrame, lead: int, review: int, service: float, over_days: float) -> pd.DataFrame:
-    """Reorder point / order-up-to policy applied to every store-product-day."""
+    """Reorder point / order-up-to policy applied to every record.
+
+    The reorder point is never below the Understock edge of the cover band the models were trained on
+    (UNDERSTOCK_COVER_DAYS of demand), and the target level is one review period above it.
+    """
     z = NormalDist().inv_cdf(service)
     d = d.copy()
     d["safety_stock"] = z * d["sigma"] * np.sqrt(lead)
-    d["reorder_point"] = d["mu"] * lead + d["safety_stock"]
-    d["target_level"] = d["mu"] * (lead + review) + z * d["sigma"] * np.sqrt(lead + review)
+    d["reorder_point"] = np.maximum(d["mu"] * lead + d["safety_stock"], d["mu"] * UNDERSTOCK_COVER_DAYS)
+    d["target_level"] = np.maximum(
+        d["mu"] * (lead + review) + z * d["sigma"] * np.sqrt(lead + review),
+        d["reorder_point"] + d["mu"] * review,
+    )
     d["days_of_cover"] = d["inventory_level"] / d["mu"]
+    d["forecast_error"] = d["units_sold"] - d["mu"]
 
     under = d["inventory_level"] <= d["reorder_point"]
     over = (d["days_of_cover"] > over_days) & (d["inventory_level"] > d["target_level"])
     d["status"] = np.select([under, over], ["Understock risk", "Overstock"], default="Healthy")
 
     d["order_qty"] = np.where(under, np.ceil(d["target_level"] - d["inventory_level"]).clip(lower=0), 0)
-    d["order_value"] = d["order_qty"] * d["avg_price"]
+    d["order_value"] = d["order_qty"] * d["price"]
     d["excess_units"] = np.where(over, np.floor(d["inventory_level"] - d["target_level"]).clip(lower=0), 0)
-    d["excess_value"] = d["excess_units"] * d["avg_price"]
+    d["excess_value"] = d["excess_units"] * d["price"]
     return d
-
-

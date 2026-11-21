@@ -1,58 +1,58 @@
 {
   "model": "XGBoost demand",
-  "target": "average daily units sold over the next 7 days",
+  "target": "units sold in the record",
   "n_iter": 20,
   "cv_splits": 3,
-  "n_train": 57200,
-  "n_test": 14500,
-  "split": "Train : 2022-01-01 \u2192 2023-07-26\nTest  : 2023-08-03 \u2192 2023-12-25   (7-day purge gap, target = average daily units sold over the next 7 days)",
+  "n_train": 19974,
+  "n_test": 5026,
+  "split": "Train : 2023-01-01 \u2192 2026-03-13\nTest  : 2026-03-14 \u2192 2026-12-31   (most recent 20% of the dates, target = units sold in the record)",
   "baseline": {
-    "name": "7-day mean of the supplied forecast",
-    "mae": 45.8363092226601,
-    "rmse": 57.469595982866394,
-    "r2": -0.9980682258963558,
-    "wape": 0.3369401033636757,
-    "bias": 5.249431593103448
+    "name": "Average units sold in the training period",
+    "mae": 11.886187200543356,
+    "rmse": 15.880790356816158,
+    "r2": -0.000299963188402419,
+    "wape": 0.4548671479036883,
+    "bias": -0.2750052386048548
   },
-  "line_average": {
-    "name": "Average of the line in the training period",
-    "mae": 32.72483974646044,
-    "rmse": 40.969317727137046,
-    "r2": -0.015433503868769627,
-    "wape": 0.24055843661341358,
-    "bias": 0.5039435736677113
+  "subcategory_average": {
+    "name": "Average of the product subcategory in the training period",
+    "mae": 10.920058557766696,
+    "rmse": 14.599582687891793,
+    "r2": 0.15459091248823076,
+    "wape": 0.41789480573598364,
+    "bias": -0.2612179323281859
   },
   "default": {
-    "cv_mae": 35.41284456392149,
-    "seconds": 7.3,
+    "cv_mae": 4.8144969688758925,
+    "seconds": 3.5,
     "test": {
-      "mae": 33.812200475006854,
-      "rmse": 42.27181448762035,
-      "r2": -0.08102516897497547,
-      "wape": 0.2485515635139736,
-      "bias": 0.8174474240007075
+      "mae": 4.458015825802522,
+      "rmse": 5.934722963639967,
+      "r2": 0.860303048537657,
+      "wape": 0.17060180104681522,
+      "bias": -0.037726616555838956
     }
   },
   "tuned": {
-    "cv_mae": 33.211665407194126,
-    "seconds": 91.1,
+    "cv_mae": 4.353876624886332,
+    "seconds": 28.6,
     "best_params": {
-      "clf__colsample_bytree": 0.8861223846483287,
-      "clf__gamma": 0.0993578407670862,
-      "clf__learning_rate": 0.010189592979395137,
+      "clf__colsample_bytree": 0.8238450602706812,
+      "clf__gamma": 0.0002601884976579094,
+      "clf__learning_rate": 0.03317316825297632,
       "clf__max_depth": 5,
-      "clf__min_child_weight": 3,
-      "clf__n_estimators": 230,
-      "clf__reg_alpha": 0.13615257464006505,
-      "clf__reg_lambda": 3.804968634158325,
-      "clf__subsample": 0.8423839899124046
+      "clf__min_child_weight": 7,
+      "clf__n_estimators": 347,
+      "clf__reg_alpha": 0.034059785435329955,
+      "clf__reg_lambda": 0.6836314065022723,
+      "clf__subsample": 0.6888431241882921
     },
     "test": {
-      "mae": 32.620661341624896,
-      "rmse": 40.76473513099058,
-      "r2": -0.005317575501936567,
-      "wape": 0.2397926270818687,
-      "bias": 0.8484982783876618
+      "mae": 4.146253154209492,
+      "rmse": 5.511676079926411,
+      "r2": 0.8795093353488085,
+      "wape": 0.15867109569465038,
+      "bias": -0.0403060308500822
     }
   }
 }

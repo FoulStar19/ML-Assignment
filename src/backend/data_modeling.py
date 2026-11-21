@@ -12,28 +12,35 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from data_loading import load_processed
-from data_transforming import HORIZON_DAYS, HISTORY_FEATURES, LINE_KEYS, STOCK_STATUS
+from data_transforming import STOCK_STATUS
 
 # ─────────────────────────────────────────────
 # 0. SETTINGS
 # ─────────────────────────────────────────────
 RANDOM_STATE = 42
-TEST_FRACTION = 0.2               # most recent share of the dates is held out as the test set
+TEST_FRACTION = 0.3               # most recent share of the dates is held out as the test set
 CLASS_NAMES = list(STOCK_STATUS)  # label 0, 1, 2 = Understock, Healthy, Overstock
 
-# Columns taken straight from the processed CSV. revenue, revenue_per_unit,
-# stock_cover and forecast_error are left out on purpose: they are just
-# re-arrangements of columns that are already included.
-BASE_NUMERIC = [
-    "inventory_level", "units_sold", "units_ordered", "demand_forecast",
-    "price", "discount", "competitor_pricing", "price_gap",
-    "month", "day", "week", "weekday",
+# Model inputs: what is known (or planned) before the sale - the stock on hand, price and promotion
+# settings, store traffic and marketing, supplier details and the calendar.
+NUMERIC_FEATURES = [
+    "inventory_level",
+    "price", "discount", "competitor_pricing", "price_gap", "price_ratio",
+    "promotion", "holiday",
+    "customer_footfall", "marketing_spend", "online_orders", "economic_index",
+    "shipping_time", "supplier_rating", "inventory_per_visitor",
+    "month", "week", "day", "weekday", "is_weekend",
 ]
-NUMERIC_FEATURES = BASE_NUMERIC + HISTORY_FEATURES      # history features come from the pipeline
 CATEGORICAL_FEATURES = [
-    "store_id", "product_id", "category", "region",
-    "weather_condition", "seasonality", "holiday_promotion",
+    "store_type", "region", "category", "product_subcategory", "brand",
+    "weather_condition", "seasonality",
 ]
+# Left out on purpose:
+#   units_sold, returns, net_units_sold, revenue, demand_level, customer_satisfaction - results of the sale
+#   stock_cover, stock_status - the label is built from inventory_level and units_sold
+#   store_id, product_id - labels, not stable stores / products in this data (one ID is sold under many
+#                          categories and store types); adding them made the models worse in testing
+#   city - no gain over region        year - the test period is a year the model has never seen
 
 LINE = "─" * 45
 
@@ -76,85 +83,60 @@ class Dataset:
         )
 
 
-def prepare_data(data_path=None, test_fraction=TEST_FRACTION, horizon_days=HORIZON_DAYS):
+def _split_by_date(df, class_names, target_text, test_fraction):
+    """Chronological split: the most recent `test_fraction` of the dates is the test set.
+
+    The label and the features all come from the same record (nothing looks into the future),
+    so no purge gap is needed between the train and test periods (cv_gap = 0).
+    """
+    df = df.sort_values(["date", "transaction_id"], kind="stable").reset_index(drop=True)
+    dates = pd.Index(df["date"].unique()).sort_values()
+    test_start = dates[int(len(dates) * (1 - test_fraction))]
+    train = df[df["date"] < test_start]
+    test = df[df["date"] >= test_start]
+
+    features = NUMERIC_FEATURES + CATEGORICAL_FEATURES
+    split_info = (
+        f"Train : {train['date'].min().date()} → {train['date'].max().date()}\n"
+        f"Test  : {test['date'].min().date()} → {test['date'].max().date()}   "
+        f"(most recent {test_fraction:.0%} of the dates, target = {target_text})"
+    )
+    return Dataset(
+        X_train=train[features].reset_index(drop=True),
+        X_test=test[features].reset_index(drop=True),
+        y_train=train["target"].to_numpy(),
+        y_test=test["target"].to_numpy(),
+        numeric_features=list(NUMERIC_FEATURES),
+        categorical_features=list(CATEGORICAL_FEATURES),
+        class_names=class_names,
+        cv_gap=0,
+        split_info=split_info,
+    )
+
+
+def prepare_data(data_path=None, test_fraction=TEST_FRACTION):
     """Processed CSV -> chronological train / test split (features and label come from the pipeline).
 
     data_path=None uses data/processed/retail_store_inventory_processed.csv and
     runs the data pipeline first if that file is missing.
     """
-    needed = (["date", "stock_status"] + LINE_KEYS + NUMERIC_FEATURES + CATEGORICAL_FEATURES)
+    needed = ["date", "transaction_id", "stock_status"] + NUMERIC_FEATURES + CATEGORICAL_FEATURES
     df = load_processed(data_path, required_columns=list(dict.fromkeys(needed)))
 
-    df = df.dropna(subset=["stock_status"]).copy()     # last horizon_days of each line have no label yet
+    df = df.dropna(subset=["stock_status"]).copy()
     df["target"] = df["stock_status"].map({n: i for i, n in enumerate(CLASS_NAMES)}).astype(int)
-    df["holiday_promotion"] = df["holiday_promotion"].astype(str)   # a 0/1 flag, handled as a category
-    df = df.sort_values(["date"] + LINE_KEYS, kind="stable").reset_index(drop=True)   # chronological
-
-    # Chronological split with a purge gap: a training row's label looks `horizon_days`
-    # ahead, so training stops that many days before the test period starts.
-    dates = pd.Index(df["date"].unique()).sort_values()
-    test_start = dates[int(len(dates) * (1 - test_fraction))]
-    train_end = test_start - pd.Timedelta(days=horizon_days)
-    train = df[df["date"] < train_end]
-    test = df[df["date"] >= test_start]
-
-    features = NUMERIC_FEATURES + CATEGORICAL_FEATURES
-    rows_per_day = int(train.groupby("date").size().max())
-    split_info = (
-        f"Train : {train['date'].min().date()} → {(train_end - pd.Timedelta(days=1)).date()}\n"
-        f"Test  : {test_start.date()} → {test['date'].max().date()}   "
-        f"({horizon_days}-day purge gap, target = stock status over the next {horizon_days} days)"
-    )
-    return Dataset(
-        X_train=train[features].reset_index(drop=True),
-        X_test=test[features].reset_index(drop=True),
-        y_train=train["target"].to_numpy(),
-        y_test=test["target"].to_numpy(),
-        numeric_features=list(NUMERIC_FEATURES),
-        categorical_features=list(CATEGORICAL_FEATURES),
-        class_names=list(CLASS_NAMES),
-        cv_gap=rows_per_day * horizon_days,
-        split_info=split_info,
-    )
+    return _split_by_date(df, list(CLASS_NAMES), "stock status of the record", test_fraction)
 
 
-def prepare_demand_data(data_path=None, test_fraction=TEST_FRACTION, horizon_days=HORIZON_DAYS):
+def prepare_demand_data(data_path=None, test_fraction=TEST_FRACTION):
     """Same features and chronological split as prepare_data, but the target is a number:
-    the average daily units sold over the next `horizon_days` days (what the stock-status label looks at)."""
-    needed = ["date", "units_sold"] + LINE_KEYS + NUMERIC_FEATURES + CATEGORICAL_FEATURES
+    the units sold in the record (what the stock-status label compares the stock with)."""
+    needed = ["date", "transaction_id", "units_sold"] + NUMERIC_FEATURES + CATEGORICAL_FEATURES
     df = load_processed(data_path, required_columns=list(dict.fromkeys(needed)))
 
-    df = df.sort_values(LINE_KEYS + ["date"], kind="stable").reset_index(drop=True)
-    df["target"] = df.groupby(LINE_KEYS, sort=False)["units_sold"].transform(
-        lambda s: s.rolling(horizon_days).mean().shift(-horizon_days))
-    df = df.dropna(subset=["target"]).copy()          # last horizon_days of each line have no future window
-    df["holiday_promotion"] = df["holiday_promotion"].astype(str)
-    df = df.sort_values(["date"] + LINE_KEYS, kind="stable").reset_index(drop=True)
-
-    dates = pd.Index(df["date"].unique()).sort_values()
-    test_start = dates[int(len(dates) * (1 - test_fraction))]
-    train_end = test_start - pd.Timedelta(days=horizon_days)
-    train = df[df["date"] < train_end]
-    test = df[df["date"] >= test_start]
-
-    features = NUMERIC_FEATURES + CATEGORICAL_FEATURES
-    rows_per_day = int(train.groupby("date").size().max())
-    split_info = (
-        f"Train : {train['date'].min().date()} → {(train_end - pd.Timedelta(days=1)).date()}\n"
-        f"Test  : {test_start.date()} → {test['date'].max().date()}   "
-        f"({horizon_days}-day purge gap, target = average daily units sold over the next {horizon_days} days)"
-    )
-    return Dataset(
-        X_train=train[features].reset_index(drop=True),
-        X_test=test[features].reset_index(drop=True),
-        y_train=train["target"].to_numpy(),
-        y_test=test["target"].to_numpy(),
-        numeric_features=list(NUMERIC_FEATURES),
-        categorical_features=list(CATEGORICAL_FEATURES),
-        class_names=[],                      # regression: no classes
-        cv_gap=rows_per_day * horizon_days,
-        split_info=split_info,
-    )
+    df = df.dropna(subset=["units_sold"]).copy()
+    df["target"] = df["units_sold"].astype(float)
+    return _split_by_date(df, [], "units sold in the record", test_fraction)
 
 
 # ─────────────────────────────────────────────

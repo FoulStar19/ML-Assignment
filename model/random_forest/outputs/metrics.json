@@ -2,48 +2,48 @@
   "model": "Random Forest",
   "n_iter": 20,
   "cv_splits": 3,
-  "n_train": 57200,
-  "n_test": 14500,
-  "split": "Train : 2022-01-01 \u2192 2023-07-26\nTest  : 2023-08-03 \u2192 2023-12-25   (7-day purge gap, target = stock status over the next 7 days)",
+  "n_train": 17471,
+  "n_test": 7529,
+  "split": "Train : 2023-01-01 \u2192 2025-10-18\nTest  : 2025-10-19 \u2192 2026-12-31   (most recent 30% of the dates, target = stock status of the record)",
   "default": {
-    "cv_f1_macro_mean": 0.7243944058392752,
-    "cv_f1_macro_std": 0.0012334109958963963,
-    "seconds": 71.3,
+    "cv_f1_macro_mean": 0.6906132546642642,
+    "cv_f1_macro_std": 0.011193988918243608,
+    "seconds": 10.1,
     "test": {
-      "accuracy": 0.7424137931034482,
-      "balanced_accuracy": 0.7196577816171102,
-      "precision_macro": 0.737721780720182,
-      "recall_macro": 0.7196577816171102,
-      "f1_macro": 0.7274497689297496,
-      "f1_weighted": 0.7396575181187774,
-      "mcc": 0.5532696334239311,
+      "accuracy": 0.7967857617213442,
+      "balanced_accuracy": 0.6887366650826818,
+      "precision_macro": 0.8016551284182304,
+      "recall_macro": 0.6887366650826818,
+      "f1_macro": 0.7288614259888363,
+      "f1_weighted": 0.7863544300269644,
+      "mcc": 0.5931419879783569,
       "per_class": {
         "Understock": {
-          "precision": 0.8160583941605839,
-          "recall": 0.7960128159487362,
-          "f1": 0.8059109749504415,
-          "support": 2809
+          "precision": 0.8334778837814397,
+          "recall": 0.6524100475220638,
+          "f1": 0.7319116527037319,
+          "support": 1473
         },
         "Healthy": {
-          "precision": 0.754666973957133,
-          "recall": 0.8031640912435615,
-          "f1": 0.7781606463878327,
-          "support": 8154
+          "precision": 0.7916367552045944,
+          "recall": 0.9231896190874843,
+          "f1": 0.8523671497584541,
+          "support": 4778
         },
         "Overstock": {
-          "precision": 0.6424399740428294,
-          "recall": 0.5597964376590331,
-          "f1": 0.5982776854509745,
-          "support": 3537
+          "precision": 0.7798507462686567,
+          "recall": 0.49061032863849763,
+          "f1": 0.6023054755043228,
+          "support": 1278
         }
       },
-      "roc_auc_ovr_macro": 0.8853169960433563
+      "roc_auc_ovr_macro": 0.9072738523306416
     }
   },
   "tuned": {
-    "cv_f1_macro_mean": 0.7345381239383194,
-    "cv_f1_macro_std": 0.0023926360123014225,
-    "seconds": 594.5,
+    "cv_f1_macro_mean": 0.7283759783574578,
+    "cv_f1_macro_std": 0.008098117140604143,
+    "seconds": 116.4,
     "best_params": {
       "clf__class_weight": "balanced_subsample",
       "clf__max_depth": null,
@@ -53,34 +53,34 @@
       "clf__n_estimators": 330
     },
     "test": {
-      "accuracy": 0.7384137931034482,
-      "balanced_accuracy": 0.7522179428321021,
-      "precision_macro": 0.7255373427810378,
-      "recall_macro": 0.7522179428321021,
-      "f1_macro": 0.7371174923251981,
-      "f1_weighted": 0.7396046037110304,
-      "mcc": 0.567957817060902,
+      "accuracy": 0.7752689600212511,
+      "balanced_accuracy": 0.7428971279247306,
+      "precision_macro": 0.7312179427979326,
+      "recall_macro": 0.7428971279247306,
+      "f1_macro": 0.7368447440414195,
+      "f1_weighted": 0.776192857991706,
+      "mcc": 0.5815036196929845,
       "per_class": {
         "Understock": {
-          "precision": 0.779149074374797,
-          "recall": 0.8540405838376647,
-          "f1": 0.8148777173913043,
-          "support": 2809
+          "precision": 0.7326343381389253,
+          "recall": 0.7589952477936185,
+          "f1": 0.7455818606202067,
+          "support": 1473
         },
         "Healthy": {
-          "precision": 0.7924654779461053,
-          "recall": 0.7249202845229336,
-          "f1": 0.7571895215525524,
-          "support": 8154
+          "precision": 0.8305847076461769,
+          "recall": 0.8116366680619506,
+          "f1": 0.8210013760982322,
+          "support": 4778
         },
         "Overstock": {
-          "precision": 0.604997476022211,
-          "recall": 0.6776929601357082,
-          "f1": 0.6392852380317375,
-          "support": 3537
+          "precision": 0.6304347826086957,
+          "recall": 0.6580594679186228,
+          "f1": 0.6439509954058193,
+          "support": 1278
         }
       },
-      "roc_auc_ovr_macro": 0.8886998205351473
+      "roc_auc_ovr_macro": 0.904125346682827
     }
   }
 }

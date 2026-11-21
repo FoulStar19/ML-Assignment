@@ -1,7 +1,7 @@
-"""The trained models the recommender uses, and how it scores store-product lines with them.
+"""The trained models the recommender uses, and how it scores the current records with them.
 
-1. Status model: the classifier with the best tuned test macro-F1. It calls each line Understock / Healthy / Overstock.
-2. Demand model: the XGBoost regressor that forecasts daily demand. It sets cover days, reorder point and order size.
+1. Status model: the classifier with the best tuned test macro-F1. It calls each record Understock / Healthy / Overstock.
+2. Demand model: the XGBoost regressor that forecasts the units sold in a record. It sets cover days, reorder point and order size.
 
 "Best" means the highest tuned test macro-F1, the same rule pipeline.py and the Model results tab use.
 The pipeline saves each tuned model as model/<name>/outputs/model.joblib. If that file is missing
@@ -83,15 +83,13 @@ def load_best_model(info: dict):
 
 
 def add_predictions(lines: pd.DataFrame, model, review: int) -> pd.DataFrame:
-    """Score every line with the model and let its call drive status and order sizes.
+    """Score every record with the model and let its call drive status and order sizes.
 
     The model only says Understock / Healthy / Overstock, so quantities still come from the
     reorder-point policy: an understocked line is topped up to its target level (at least one
     review period of demand), an overstocked line has everything above target as surplus.
     """
-    X = lines[FEATURES].copy()
-    X["holiday_promotion"] = X["holiday_promotion"].astype(str)
-    proba = model.predict_proba(X)
+    proba = model.predict_proba(lines[FEATURES])
 
     out = lines.copy()
     out["p_under"], out["p_healthy"], out["p_over"] = proba[:, 0], proba[:, 1], proba[:, 2]
@@ -102,9 +100,9 @@ def add_predictions(lines: pd.DataFrame, model, review: int) -> pd.DataFrame:
     gap = out["target_level"] - out["inventory_level"]
     top_up = np.maximum(gap, out["mu"] * review)
     out["order_qty"] = np.where(under, np.ceil(top_up), 0)
-    out["order_value"] = out["order_qty"] * out["avg_price"]
+    out["order_value"] = out["order_qty"] * out["price"]
     out["excess_units"] = np.where(over, np.floor(-gap).clip(lower=0), 0)
-    out["excess_value"] = out["excess_units"] * out["avg_price"]
+    out["excess_value"] = out["excess_units"] * out["price"]
     return out
 
 
@@ -151,19 +149,21 @@ def load_demand_model(info: dict):
 
 @st.cache_data(show_spinner="Forecasting demand...")
 def _forecast_all(stamp: float, _model) -> pd.DataFrame:
-    """Expected daily demand for every store-product-day. `stamp` refreshes the cache after a new training run."""
+    """Expected units sold for every record. `stamp` refreshes the cache after a new training run."""
     df = load_data()
-    X = df[FEATURES].copy()
-    X["holiday_promotion"] = X["holiday_promotion"].astype(str)
-    out = df[["store_id", "product_id", "date"]].copy()
-    out["mu_model"] = np.clip(_model.predict(X), 1, None)
+    out = df[["transaction_id"]].copy()
+    out["mu_model"] = np.clip(_model.predict(df[FEATURES]), 1, None)
     return out
 
 
-def with_model_demand(plan: pd.DataFrame, info: dict) -> pd.DataFrame:
-    """Swap the rolling-forecast demand (mu) for the XGBoost forecast; the policy numbers then follow from it."""
+def with_model_demand(info: dict) -> pd.DataFrame:
+    """Every record with the XGBoost forecast as its expected demand (mu); the policy numbers then follow from it.
+
+    sigma is the model's test RMSE: how far its forecasts typically miss.
+    """
     model = load_demand_model(info)
     stamp = (info["folder"] / "demand_model.joblib").stat().st_mtime
-    out = plan.merge(_forecast_all(stamp, model), on=["store_id", "product_id", "date"], how="left")
-    out["mu"] = out["mu_model"].fillna(out["mu"])
-    return out.drop(columns="mu_model")
+    out = load_data().merge(_forecast_all(stamp, model), on="transaction_id", how="left")
+    out = out.rename(columns={"mu_model": "mu"})
+    out["sigma"] = float(info["metrics"]["tuned"]["test"]["rmse"])
+    return out

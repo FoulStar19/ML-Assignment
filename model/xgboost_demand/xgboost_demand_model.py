@@ -1,6 +1,6 @@
-"""XGBoost demand model: forecasts average daily units sold over the next 7 days for one store-product line.
+"""XGBoost demand model: forecasts the units sold in a record (one store-product sale) from the drivers known before it.
 
-The classifiers say WHETHER a line is under- or overstocked. This regressor says HOW MUCH is needed:
+The classifiers say WHETHER a record is under- or overstocked. This regressor says HOW MUCH is needed:
 the dashboard's recommender uses its forecast to set days of cover, reorder point, target level and order size.
 
 Writes to model/xgboost_demand/outputs/ (demand_metrics.json, demand_model.joblib, gain_importance.*, cv_results.csv).
@@ -30,8 +30,7 @@ from evaluation import _jsonable, parse_args, plot_bar
 
 MODEL_NAME = "XGBoost demand"
 OUT_DIR = Path(__file__).resolve().parent / "outputs"
-BASELINE_COLUMN = "forecast_roll7_mean"     # what the dashboard used before: the average of the supplied demand forecast
-BASELINE_NAME = "7-day mean of the supplied forecast"
+BASELINE_NAME = "Average units sold in the training period"     # what a forecast with no drivers would say
 
 
 def build_pipeline(ds) -> Pipeline:
@@ -67,11 +66,11 @@ def regression_metrics(y, pred) -> dict:
     }
 
 
-def line_average_baseline(ds) -> np.ndarray:
-    """Predict each test row with the average demand its store-product line had in the training period."""
-    key = lambda X: X["store_id"].astype(str) + "|" + X["product_id"].astype(str)
-    per_line = pd.Series(ds.y_train, index=key(ds.X_train)).groupby(level=0).mean()
-    return key(ds.X_test).map(per_line).fillna(ds.y_train.mean()).to_numpy()
+def subcategory_average_baseline(ds) -> np.ndarray:
+    """Predict each test row with the average demand its product subcategory had in the training period."""
+    key = lambda X: X["product_subcategory"].astype(str)
+    per_group = pd.Series(ds.y_train, index=key(ds.X_train)).groupby(level=0).mean()
+    return key(ds.X_test).map(per_group).fillna(ds.y_train.mean()).to_numpy()
 
 
 def explain(model, out_dir):
@@ -90,10 +89,10 @@ def run(dataset, n_iter=20, cv_splits=3):
     print(f"\n{'=' * 45}\n{MODEL_NAME}\n{'=' * 45}")
     print(f"Train rows : {len(X_tr):,}   Test rows : {len(X_te):,}\n{dataset.split_info}\n")
 
-    baseline = regression_metrics(y_te, X_te[BASELINE_COLUMN].fillna(X_te["demand_forecast"]))
-    line_avg = regression_metrics(y_te, line_average_baseline(dataset))
+    baseline = regression_metrics(y_te, np.full(len(y_te), float(np.mean(y_tr))))
+    group_avg = regression_metrics(y_te, subcategory_average_baseline(dataset))
     print(f"Baseline ({BASELINE_NAME}): MAE {baseline['mae']:.3f}  WAPE {baseline['wape']:.1%}  R2 {baseline['r2']:.3f}")
-    print(f"Baseline (line average in training): MAE {line_avg['mae']:.3f}  WAPE {line_avg['wape']:.1%}  R2 {line_avg['r2']:.3f}")
+    print(f"Baseline (subcategory average in training): MAE {group_avg['mae']:.3f}  WAPE {group_avg['wape']:.1%}  R2 {group_avg['r2']:.3f}")
 
     # ── Stage 1: default settings
     t0 = time.time()
@@ -117,11 +116,11 @@ def run(dataset, n_iter=20, cv_splits=3):
     print(f"Best parameters: {json.dumps(search.best_params_, default=_jsonable)}")
 
     results = {
-        "model": MODEL_NAME, "target": "average daily units sold over the next 7 days",
+        "model": MODEL_NAME, "target": "units sold in the record",
         "n_iter": n_iter, "cv_splits": cv_splits, "n_train": int(len(X_tr)), "n_test": int(len(X_te)),
         "split": dataset.split_info,
         "baseline": {"name": BASELINE_NAME, **baseline},
-        "line_average": {"name": "Average of the line in the training period", **line_avg},
+        "subcategory_average": {"name": "Average of the product subcategory in the training period", **group_avg},
         "default": default, "tuned": tuned,
     }
     (OUT_DIR / "demand_metrics.json").write_text(json.dumps(results, indent=2, default=_jsonable))

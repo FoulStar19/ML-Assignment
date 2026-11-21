@@ -9,14 +9,14 @@ import streamlit as st
 
 import model_results
 import tabs
-from config import MIN_HISTORY_DAYS, PROCESSED_FILE, RAW_FILE, REQUIRED_COLUMNS, ROOT_DIR
+from config import PROCESSED_FILE, RAW_FILE, REQUIRED_COLUMNS, ROOT_DIR
 from planning import apply_policy, demand_stats, load_data
 from predictor import (FEATURES, add_predictions, best_model_info, demand_model_info, load_best_model,
                        with_model_demand)
 from recommender import plan_transfers, recommend
 from theme import inject_css
 
-OVERSTOCK_COVER_DAYS = 3.0   # the label the models were trained on (see src/backend/data_transforming.py)
+from data_transforming import OVERSTOCK_COVER_DAYS  # noqa: E402  (the label the models were trained on; src/backend is on the path)
 
 
 # ─────────────────────────────────────────────
@@ -32,7 +32,7 @@ def load_base() -> pd.DataFrame:
     if base.empty:
         st.error(f"No data found. Add `{RAW_FILE.relative_to(ROOT_DIR)}`, then run `python src/backend/pipeline.py`.")
         st.stop()
-    missing = [c for c in REQUIRED_COLUMNS + FEATURES + ["stock_status", "forward_cover_days"] if c not in base.columns]
+    missing = [c for c in REQUIRED_COLUMNS + FEATURES + ["stock_status", "stock_cover"] if c not in base.columns]
     if missing:
         st.error(f"The processed data is out of date (missing {', '.join(missing)}). Run `python src/backend/pipeline.py`.")
         st.stop()
@@ -47,7 +47,7 @@ class Settings:
     lead: int
     review: int
     service: float
-    lookback: int
+    window: int
     over_days: float
     watch_days: float
     use_transfers: bool
@@ -67,11 +67,11 @@ def render_sidebar(base: pd.DataFrame, has_demand_model: bool) -> Settings:
             picked = st.date_input("Dates", value=(min_d, max_d), min_value=min_d, max_value=max_d)
 
         with st.expander("Ordering", expanded=True):
-            lead = st.slider("Lead time", 1, 7, 1, format="%d d")
+            lead = st.slider("Lead time", 1, 10, 4, format="%d d")
             review = st.slider("Order every", 1, 7, 1, format="%d d")
             service = st.select_slider("Service level", options=[0.90, 0.95, 0.975, 0.99], value=0.95,
                                        format_func=lambda v: f"{v:.1%}")
-            lookback = st.slider("Look-back", 14, 90, 30, format="%d d")
+            window = st.slider("Review window", 7, 60, 14, format="%d d")
 
         with st.expander("More", expanded=False):
             watch_days = st.slider("Reorder-soon window", 0.5, 3.0, 0.5, step=0.5, format="%.1f d")
@@ -87,7 +87,7 @@ def render_sidebar(base: pd.DataFrame, has_demand_model: bool) -> Settings:
     start, end = pd.Timestamp(picked[0]), pd.Timestamp(picked[1])
 
     return Settings(
-        lead=lead, review=review, service=service, lookback=lookback, over_days=OVERSTOCK_COVER_DAYS,
+        lead=lead, review=review, service=service, window=window, over_days=OVERSTOCK_COVER_DAYS,
         watch_days=watch_days, use_transfers=use_transfers, stores=stores, start=start, end=end,
         use_demand_model=use_demand,
     )
@@ -98,15 +98,15 @@ def render_sidebar(base: pd.DataFrame, has_demand_model: bool) -> Settings:
 # ─────────────────────────────────────────────
 @dataclass
 class Context:
-    plan: pd.DataFrame            # every store-product-day with its policy numbers
-    lines: pd.DataFrame           # the plan date only, one row per store-product line
+    plan: pd.DataFrame            # every record with its policy numbers
+    lines: pd.DataFrame           # the latest record of each store-product in the review window
     hist: pd.DataFrame            # the whole scope (Trends tab)
     transfers: pd.DataFrame
     recs: pd.DataFrame
     asof_date: pd.Timestamp
     lead: int
     model: dict
-    demand: dict | None           # XGBoost demand model in use (None = rolling forecast)
+    demand: dict | None           # XGBoost demand model in use (None = subcategory averages)
     over_days: float
     use_transfers: bool
     n_lines: int
@@ -122,21 +122,21 @@ class Context:
 
 
 def build_context(base: pd.DataFrame, s: Settings, model, model_info: dict, demand: dict | None) -> Context:
-    lead, review, service, lookback = s.lead, s.review, s.service, s.lookback
+    lead, review, service, window = s.lead, s.review, s.service, s.window
     over_days, watch_days, use_transfers = s.over_days, s.watch_days, s.use_transfers
     stores, start, end = s.stores, s.start, s.end
 
-    expected = demand_stats(lookback)
-    if demand is not None:
-        expected = with_model_demand(expected, demand)          # XGBoost sets the expected daily demand
+    expected = with_model_demand(demand) if demand is not None else demand_stats()   # XGBoost sets the expected demand
     plan = apply_policy(expected, lead, review, service, over_days)
     scope = plan[plan["store_id"].isin(stores) & plan["date"].between(start, end)]
     if scope.empty:
-        st.warning(f"No plan for that range. Plans start on {(base['date'].min() + pd.Timedelta(days=MIN_HISTORY_DAYS)).date()}.")
+        st.warning("No records for that range.")
         st.stop()
 
     asof_date = scope["date"].max()
-    lines = add_predictions(scope[scope["date"] == asof_date], model, review)   # the best model decides the status
+    recent = scope[scope["date"] > asof_date - pd.Timedelta(days=window)]        # the review window ending on the last date
+    recent = recent.sort_values(["date", "transaction_id"]).drop_duplicates(["store_id", "product_id"], keep="last")
+    lines = add_predictions(recent, model, review)                               # the best model decides the status
     hist = scope
     transfers = plan_transfers(lines) if use_transfers else plan_transfers(lines.iloc[0:0])
     recs = recommend(lines, transfers, lead, over_days, watch_days)

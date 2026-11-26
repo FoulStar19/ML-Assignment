@@ -15,7 +15,7 @@ PROCESSED_DATA_DIR = os.path.join(ROOT_DIR, "data", "processed")
 PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, "retail_store_inventory_processed.csv")
 
 
-def run_pipeline():
+def run_pipeline(run_training=True):
     # Create the output folder if it doesn't exist yet - just in case
     os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
 
@@ -43,22 +43,18 @@ def run_pipeline():
     # ─────────────────────────────────────────────
     # 5. PREPARE FOR MODELING (train/test split, encoding, scaling)
     # ─────────────────────────────────────────────
-    df_train, df_test = data_model(PROCESSED_DATA_FILE)
+    data_model(PROCESSED_DATA_FILE)
 
     # ─────────────────────────────────────────────
     # 6. TRAIN MODELS
     # ─────────────────────────────────────────────
-    if train_models:
-        from model_training import train_models
-        train_models(df_train, df_test, n_iter=n_iter, cv_splits=cv_splits)
+    if run_training:
+        from backend.data_training import train_models
+        train_models()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Load -> clean -> transform -> train the models")
-    parser.add_argument("--n-iter", type=int, default=20,
-                        help="random-search candidates per model (default 20)")
-    parser.add_argument("--cv-splits", type=int, default=3,
-                        help="time-series CV folds used for tuning (default 3)")
     parser.add_argument("--skip-modeling", action="store_true",
                         help="only build the processed CSV, do not train the models")
     args = parser.parse_args()
-    run_pipeline(train_models=not args.skip_modeling, n_iter=args.n_iter, cv_splits=args.cv_splits)
+    run_pipeline(run_training=not args.skip_modeling)

@@ -14,27 +14,37 @@ REQUIRED_COLUMNS = [
     "inventory_level", "units_sold", "price", "discount",
 ]
 
-INK = "#1C2B3A"
-MUTED = "#5B6B7B"
-BLUE = "#2B4C7E"
-GRID = "#E1E7ED"
-STATUS_COLORS = {"Understock risk": "#C4384A", "Healthy": "#26796B", "Overstock": "#D79A1F"}
+INK = "#1E2A44"
+MUTED = "#66718C"
+BLUE = "#3B5BDB"
+GRID = "#E4E9F3"
+BG = "#F4F6FB"
+VIOLET = "#7C5CE0"
+SKY = "#2BB5D8"
+PALETTE = [BLUE, "#22A27B", "#F5A524", VIOLET, "#E5484D", SKY]   # categorical charts
+
+STATUS_COLORS = {"Understock risk": "#E5484D", "Healthy": "#22A27B", "Overstock": "#F5A524"}
 STATUS_TEXT = {"Understock risk": "white", "Healthy": "white", "Overstock": INK}
 STATUS_ORDER = list(STATUS_COLORS)
+# Soft tints for chips: (background, text)
+STATUS_TINT = {"Understock risk": ("#FDE3E4", "#A3262C"), "Healthy": ("#D6F2E8", "#126B4E"), "Overstock": ("#FEEBC8", "#8A5A06")}
 
 PRIORITY_ORDER = ["Critical", "High", "Medium", "Low", "None"]
-PRIORITY_COLORS = {"Critical": "#8E1F30", "High": "#C4384A", "Medium": "#D79A1F", "Low": "#8FA0B3"}
-# Soft tints for table cells: (background, text)
+PRIORITY_COLORS = {"Critical": "#B4232F", "High": "#E5484D", "Medium": "#F5A524", "Low": "#94A3C0"}
 PRIORITY_TINT = {
-    "Critical": ("#F2C4CA", "#6F1423"),
-    "High": ("#F7DDE0", "#8E2434"),
-    "Medium": ("#F8E8C8", "#7A5410"),
-    "Low": ("#E3E9EF", "#34495E"),
+    "Critical": ("#FAD4D7", "#8A1A25"),
+    "High": ("#FDE3E4", "#A3262C"),
+    "Medium": ("#FEEBC8", "#8A5A06"),
+    "Low": ("#E6EBF5", "#40507A"),
 }
 ACTION_ORDER = [
     "Order now", "Transfer in + order", "Transfer in", "Transfer out",
     "Clear excess", "Pause ordering", "Reorder soon",
 ]
+ACTION_ICONS = {
+    "Order now": "🛒", "Transfer in + order": "🔁", "Transfer in": "📥", "Transfer out": "📤",
+    "Clear excess": "🏷️", "Pause ordering": "⏸️", "Reorder soon": "⏰", "No action": "✅",
+}
 
 MIN_HISTORY_RECORDS = 30  # records a subcategory needs before its average demand is trusted (used without the demand model)
 MIN_TRANSFER = 10         # smallest store-to-store transfer worth suggesting (units)

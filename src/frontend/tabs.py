@@ -9,12 +9,15 @@ import plotly.express as px
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from charts import line_detail, map_cells, stock_map, stock_vs_reorder
-from config import (ACTION_ORDER, BLUE, CURRENCY, INK, MUTED, PRIORITY_COLORS, PRIORITY_ORDER,
-                    PRIORITY_TINT, STATUS_COLORS, STATUS_ORDER)
-from theme import chip, kpi_row, money, prob_bar, section, show, style, styled
+from charts import line_detail, map_cells, status_breakdown, stock_map, stock_vs_reorder
+from config import (ACTION_ICONS, ACTION_ORDER, BLUE, CURRENCY, INK, MUTED, PRIORITY_ORDER, PRIORITY_TINT,
+                    SKY, STATUS_COLORS, STATUS_ORDER, STATUS_TINT, VIOLET)
+from theme import chip, kpi_row, money, prob_bar, section, show, stat_row, stock_meter, style, styled
 
-STATUS_TINT = {"Understock risk": ("#F7DDE0", "#8E2434"), "Healthy": ("#D9EEE9", "#1B5A4F"), "Overstock": ("#F8E8C8", "#7A5410")}
+
+def _with_icons(table: pd.DataFrame) -> pd.DataFrame:
+    """Display copy of an action table with a small icon in front of each action name."""
+    return table.assign(Action=table["Action"].map(lambda a: f"{ACTION_ICONS.get(a, '')} {a}".strip()))
 
 
 # ─────────────────────────────────────────────
@@ -70,29 +73,36 @@ def inspector(ctx, key: str) -> None:
     row = ctx.recs[(ctx.recs["store_id"] == store) & (ctx.recs["product_id"] == product)].iloc[0]
     bg, fg = STATUS_TINT[row["status"]]
     prio = row["priority"]
-    pbg, pfg = PRIORITY_TINT.get(prio, ("#E3E9EF", "#34495E"))
+    pbg, pfg = PRIORITY_TINT.get(prio, ("#E6EBF5", "#40507A"))
     chips = chip(row["status"], bg, fg) + (chip(prio, pbg, pfg) if prio != "None" else "")
     st.markdown(
-        f'<div class="insp"><div class="title">{row["action"]}</div>'
+        f'<div class="insp" style="--tone:{STATUS_COLORS[row["status"]]}"><div class="title">{ACTION_ICONS.get(row["action"], "")} {row["action"]}</div>'
         f'<div class="sub">{chips}</div>'
         f'{prob_bar(row["p_under"], row["p_healthy"], row["p_over"])}'
         f'<div class="why">{row["why"]}</div></div>',
         unsafe_allow_html=True,
     )
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("On hand", f"{row['inventory_level']:,.0f}")
-    m2.metric("Cover", f"{row['days_of_cover']:.1f} d")
-    m3.metric("Demand", f"{row['mu']:,.0f}/d")
-    m4.metric("Order", f"{row['net_order']:,.0f}")
+    stat_row([("On hand", f"{row['inventory_level']:,.0f}", INK), ("Cover", f"{row['days_of_cover']:.1f} d", SKY),
+              ("Demand", f"{row['mu']:,.0f}/d", VIOLET), ("Order", f"{row['net_order']:,.0f}", BLUE)])
 
     # What-if: change the order and see the cover it buys against the lead time.
     top = int(max(row["target_level"] * 1.5, row["net_order"] * 1.5, 50))
     qty = st.slider("Order qty", 0, top, int(min(row["net_order"], top)), key=f"{key}_qty_{store}_{product}")
     cover_after = (row["inventory_level"] + qty) / row["mu"]
-    st.metric("Cover after order", f"{cover_after:.1f} d", f"{cover_after - ctx.lead:+.1f} d vs lead time")
-
-    show(line_detail(row, ctx.over_days), key=f"{key}_history")
+    gap = cover_after - ctx.lead
+    ok = STATUS_TINT["Healthy"] if gap >= 0 else STATUS_TINT["Understock risk"]
+    st.markdown(
+        f'<div class="after"><div><div class="l">Cover after order</div><div class="v">{cover_after:.1f} d</div></div>'
+        f'{chip(("▲ " if gap >= 0 else "▼ ") + f"{gap:+.1f} d vs lead time", ok[0], ok[1])}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        stock_meter(f"{store} · {product}", row["inventory_level"], qty, row["reorder_point"], row["target_level"],
+                    row["mu"] * ctx.over_days),
+        unsafe_allow_html=True,
+    )
+    with st.expander("Unit comparison"):
+        show(line_detail(row, ctx.over_days), key=f"{key}_history")
 
 
 # ─────────────────────────────────────────────
@@ -101,10 +111,11 @@ def inspector(ctx, key: str) -> None:
 def tab_overview(ctx):
     lines, recs = ctx.lines, ctx.recs
     kpi_row([
-        ("Critical", f"{ctx.n_critical}", "", "bad" if ctx.n_critical else "good"),
-        ("Understock", f"{ctx.n_under}", f"of {ctx.n_lines} lines", "bad" if ctx.n_under else "good"),
-        ("Overstock", f"{ctx.n_over}", f"{money(ctx.excess_value)} value", "warn"),
-        ("To order", money(ctx.net_value), f"{ctx.net_units:,.0f} units", ""),
+        dict(label="Understock risk", value=ctx.n_under, tone="red", icon="alert", pulse=bool(ctx.n_critical),
+             note=f"{ctx.n_critical} critical" if ctx.n_critical else f"of {ctx.n_lines} lines"),
+        dict(label="Healthy", value=ctx.n_healthy, tone="green", icon="check", note=f"of {ctx.n_lines} lines"),
+        dict(label="Overstock", value=ctx.n_over, tone="amber", icon="layers", note=f"{money(ctx.excess_value)} excess value"),
+        dict(label="To order", value=ctx.net_value, tone="blue", icon="cart", fmt="money", note=f"{ctx.net_units:,.0f} units"),
     ])
 
     counts = lines["status"].value_counts()
@@ -115,7 +126,7 @@ def tab_overview(ctx):
 
     left, right = st.columns([3, 2], gap="large")
     with left:
-        view = st.segmented_control("Chart", ["Map", "Stock vs reorder"], default="Map",
+        view = st.segmented_control("Chart", ["Map", "Stock vs reorder", "Breakdown"], default="Map",
                                     key="ov_chart", label_visibility="collapsed") or "Map"
         if view == "Map":
             st.plotly_chart(
@@ -123,8 +134,13 @@ def tab_overview(ctx):
                 config={"displayModeBar": False}, on_select=lambda: _pick_from_map("stock_map", lines),
                 selection_mode="points",
             )
-        else:
+        elif view == "Stock vs reorder":
             show(stock_vs_reorder(lines))
+        else:
+            dim = st.segmented_control(
+                "Group by", ["category", "region", "store_type"], default="category", key="bd_dim", label_visibility="collapsed",
+                format_func=lambda c: {"category": "Category", "store_type": "Store type", "region": "Region"}[c]) or "category"
+            show(status_breakdown(lines, dim), key="breakdown")
 
         top = recs[recs["priority"] != "None"]
         if focus != "All":
@@ -139,7 +155,7 @@ def tab_overview(ctx):
                 "product_id": "Product", "net_order": "Order",
             }).reset_index(drop=True)
             st.dataframe(
-                styled(table, {"Order": "{:,.0f}"}, tint_col="Priority"), hide_index=True, key="top_tbl",
+                styled(_with_icons(table), {"Order": "{:,.0f}"}, tint_col="Priority"), hide_index=True, key="top_tbl",
                 on_select=lambda: _pick_from_table("top_tbl", table), selection_mode="single-row",
                 height=35 * (len(table) + 1) + 3,
             )
@@ -156,10 +172,12 @@ def tab_recommendations(ctx):
     prio_counts = acted["priority"].value_counts()
     act_counts = acted["action"].value_counts()
 
-    f1, f2 = st.columns(2)
-    prios = f1.pills("Priority", PRIORITY_ORDER[:4], selection_mode="multi", default=PRIORITY_ORDER[:4],
+    stat_row([("Lines to act on", f"{len(acted):,}", BLUE), ("Units to order", f"{ctx.net_units:,.0f}", STATUS_COLORS["Understock risk"]),
+              ("Units to move", f"{ctx.moved_units:,}", VIOLET), ("Excess value", money(ctx.excess_value), STATUS_COLORS["Overstock"])])
+
+    prios = st.pills("Priority", PRIORITY_ORDER[:4], selection_mode="multi", default=PRIORITY_ORDER[:4],
                      format_func=lambda p: f"{p} {prio_counts.get(p, 0)}")
-    acts = f2.pills("Action", [a for a in ACTION_ORDER if a in act_counts.index], selection_mode="multi",
+    acts = st.pills("Action", [a for a in ACTION_ORDER if a in act_counts.index], selection_mode="multi",
                     format_func=lambda a: f"{a} {act_counts.get(a, 0)}")
 
     view = recs[recs["priority"].isin(prios or [])]
@@ -182,7 +200,7 @@ def tab_recommendations(ctx):
             st.caption("No lines match.")
         else:
             st.dataframe(
-                styled(table, {"On hand": "{:,.0f}", "Cover": "{:.1f}"}, tint_col="Priority"),
+                styled(_with_icons(table), {"On hand": "{:,.0f}", "Cover": "{:.1f}"}, tint_col="Priority"),
                 hide_index=True, key="rec_table", selection_mode="single-row",
                 on_select=lambda: _pick_from_table("rec_table", table),
                 height=min(35 * (len(table) + 1) + 3, 560),

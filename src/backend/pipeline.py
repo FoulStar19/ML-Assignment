@@ -15,7 +15,7 @@ PROCESSED_DATA_DIR = os.path.join(ROOT_DIR, "data", "processed")
 PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, "retail_store_inventory_processed.csv")
 
 
-def run_pipeline(train_models=False, n_iter=20, cv_splits=3):
+def run_pipeline():
     # Create the output folder if it doesn't exist yet - just in case
     os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
 
@@ -41,11 +41,16 @@ def run_pipeline(train_models=False, n_iter=20, cv_splits=3):
     print(f"Processed data saved to {PROCESSED_DATA_FILE}\n")
 
     # ─────────────────────────────────────────────
-    # 5. MODEL TRAINING, TUNING AND EVALUATION
+    # 5. PREPARE FOR MODELING (train/test split, encoding, scaling)
+    # ─────────────────────────────────────────────
+    df_train, df_test = data_model(PROCESSED_DATA_FILE)
+
+    # ─────────────────────────────────────────────
+    # 6. TRAIN MODELS
     # ─────────────────────────────────────────────
     if train_models:
-        data_model(PROCESSED_DATA_FILE, n_iter=n_iter, cv_splits=cv_splits)
-
+        from model_training import train_models
+        train_models(df_train, df_test, n_iter=n_iter, cv_splits=cv_splits)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Load -> clean -> transform -> train the models")

@@ -9,15 +9,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from config import BLUE, DEMAND_DIR, MODEL_DIR, STATUS_COLORS
-from theme import section, show, style, styled
+from config import BLUE, DEMAND_DIR, MODEL_DIR, PALETTE, STATUS_COLORS
+from theme import mix, section, show, style, styled
 
 CLASS_COLORS = {
     "Understock": STATUS_COLORS["Understock risk"],
     "Healthy": STATUS_COLORS["Healthy"],
     "Overstock": STATUS_COLORS["Overstock"],
 }
-STAGE_COLORS = {"Default settings": "#A9B5C1", "Tuned": BLUE}
+STAGE_COLORS = {"Default settings": "#B8C2D9", "Tuned": BLUE}
 FEATURE_PLOT_TITLES = {                       # file name -> caption (anything else uses its file name)
     "coefficients_understock.png": "Top drivers of Understock (coefficients)",
     "coefficients_overstock.png": "Top drivers of Overstock (coefficients)",
@@ -74,13 +74,16 @@ def render() -> None:
 
     # One card per model, best first. The best one is the model the dashboard uses.
     order = tuned.sort_values("Macro-F1", ascending=False).index
+    colours = {name: PALETTE[i % len(PALETTE)] for i, name in enumerate(results)}      # one colour per model, kept across tabs
     for col, name in zip(st.columns(len(order)), order):
         t = tuned.loc[name]
-        badge = '<span class="badge">Status</span>' if name == best else ""
+        c = colours[name]
+        badge = '<span class="badge">In use</span>' if name == best else ""
         col.markdown(
-            f'<div class="mcard {"best" if name == best else ""}"><div class="n">{name}{badge}</div>'
+            f'<div class="mcard {"best" if name == best else ""}" style="--c:{c};--tint:{mix(c, .88)}"><div class="n">{name}{badge}</div>'
             f'<div class="f">{t["Macro-F1"]:.3f}</div>'
-            f'<div class="m">macro-F1 · accuracy {t["Accuracy"]:.1%}</div></div>',
+            f'<div class="m">macro-F1 · accuracy {t["Accuracy"]:.1%}</div>'
+            f'<div class="bar"><i style="width:{min(t["Macro-F1"], 1) * 100:.1f}%"></i></div></div>',
             unsafe_allow_html=True,
         )
 

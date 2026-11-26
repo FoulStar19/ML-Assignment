@@ -1,56 +1,97 @@
-import sys
+import os
 from pathlib import Path
 
-MODEL_DIR = Path(__file__).resolve().parents[1]                    # model/  (evaluation.py)
-sys.path.insert(0, str(MODEL_DIR))
-sys.path.insert(0, str(MODEL_DIR.parent / "src" / "backend"))       # data pipeline + data_modeling.py
-
+import joblib
 import pandas as pd
-from scipy.stats import loguniform
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, auc, roc_auc_score
 
-from data_modeling import RANDOM_STATE, build_preprocessor, prepare_data
-from evaluation import parse_args, plot_bar, run_model_experiment
+LINE = "─" * 45
 
-MODEL_NAME = "Logistic Regression (Baseline)"
-OUT_DIR = Path(__file__).resolve().parent / "outputs"
+# ─────────────────────────────────────────────
+# 0. SETTINGS
+# ─────────────────────────────────────────────
+SEED = 42
+ROOT_DIR = Path(__file__).resolve().parents[4] # src/backend/model/logistic_regression/<this file>
+TRAIN_FILE = ROOT_DIR / "data" / "processed" / "train.csv"
+TEST_FILE = ROOT_DIR / "data" / "processed" / "test.csv"
+MODEL_FILE = ROOT_DIR / "models" / "logistic_regression_model.joblib"
 
-
-def build_pipeline(ds) -> Pipeline:
-    """Scaling matters for LR (regularisation penalises large coefficients), so scale=True."""
-    return Pipeline([
-        ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=True)),
-        ("clf", LogisticRegression(max_iter=2000, random_state=RANDOM_STATE)),
-    ])
-
-
-# Part B tuning: C = inverse regularisation strength (small C = stronger regularisation);
-# class_weight="balanced" up-weights the rarer Understock/Overstock classes.
-SEARCH_SPACE = {
-    "clf__C": loguniform(1e-3, 1e2),
-    "clf__class_weight": [None, "balanced"],
-}
+TARGET = "Units_Sold"
+NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]   # labels / recommender columns
+CLASSES = ["Low", "Medium", "High"] # demand level: bottom / middle / top third of Units_Sold
 
 
-def explain(model, ds, out_dir):
-    """Coefficients per class: positive = pushes the prediction towards that class."""
-    names = model.named_steps["prep"].get_feature_names_out()
-    coefs = model.named_steps["clf"].coef_                      # shape (n_classes, n_features)
-    table = pd.DataFrame(coefs.T, index=names, columns=ds.class_names)
-    table.to_csv(Path(out_dir) / "coefficients.csv")
-    for cls in ("Understock", "Overstock"):
-        top = table[cls].reindex(table[cls].abs().sort_values(ascending=False).index).head(15)
-        plot_bar(top, f"Logistic Regression - top drivers of {cls}",
-                 Path(out_dir) / f"coefficients_{cls.lower()}.png", "coefficient (standardised)")
+# ─────────────────────────────────────────────
+# 1. HELPERS
+# ─────────────────────────────────────────────
+def load_split(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{path} not found - run pipeline.py first")
+    df = pd.read_csv(path)
+    return df.drop(columns=NON_FEATURES), df[TARGET]
 
 
-def run(dataset, n_iter=20, cv_splits=3):
-    """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
-    return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
-                                n_iter=n_iter, cv_splits=cv_splits, explain=explain)
+def demand_cutoffs(units_train):
+    # Cut points come from the training data only, so the test set does not influence the labels
+    return units_train.quantile([1 / 3, 2 / 3]).tolist()
+
+
+def to_demand_level(units, cutoffs):
+    return pd.cut(units, bins=[-float("inf"), cutoffs[0], cutoffs[1], float("inf")], labels=CLASSES).astype(str)
+
+
+# ─────────────────────────────────────────────
+# 2. LOGISTIC REGRESSION BASELINE
+# ─────────────────────────────────────────────
+def train_logistic_regression():
+
+    # 1. Load the prepared data (already encoded and scaled by data_modeling)
+    print(LINE)
+    print("1. Data")
+    X_train, units_train = load_split(TRAIN_FILE)
+    X_test, units_test = load_split(TEST_FILE)
+    cutoffs = demand_cutoffs(units_train)
+    y_train = to_demand_level(units_train, cutoffs)
+    y_test = to_demand_level(units_test, cutoffs)
+    print(f"Train : {len(X_train):,} rows | Test : {len(X_test):,} rows | Inputs : {X_train.shape[1]}")
+    print(f"Demand level from {TARGET}: Low <= {cutoffs[0]:.0f}, Medium <= {cutoffs[1]:.0f}, High above")
+    print("Train classes:", y_train.value_counts(normalize=True).round(3).reindex(CLASSES).to_dict())
+    print(LINE + "\n")
+
+    # 2. Train (plain defaults - this is the baseline the other models have to beat)
+    print(LINE)
+    print("2. Training")
+    model = LogisticRegression(max_iter=1000, random_state=SEED)
+    model.fit(X_train, y_train)
+    print("LogisticRegression(max_iter=1000) fitted.")
+    print(LINE + "\n")
+
+    # 3. Evaluate on the held-out (latest) dates
+    print(LINE)
+    print("3. Evaluation (test set)")
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred, average="macro")
+    majority = y_test.value_counts(normalize=True).max()
+    print(f"Accuracy : {acc:.3f}  (always guessing the biggest class: {majority:.3f})")
+    print(f"Macro F1 : {f1:.3f}")
+    print("\nConfusion matrix (rows = actual, columns = predicted):")
+    print(pd.DataFrame(confusion_matrix(y_test, y_pred, labels=CLASSES),
+                       index=CLASSES, columns=CLASSES).to_string())
+    print("\n" + classification_report(y_test, y_pred, labels=CLASSES, digits=3))
+    print(LINE + "\n")
+
+    # 4. Save
+    print(LINE)
+    print("4. Saving")
+    MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump({"model": model, "cutoffs": cutoffs, "classes": CLASSES}, MODEL_FILE)
+    print(f"Model saved : {MODEL_FILE}")
+    print(LINE + "\n")
+
+    return model
 
 
 if __name__ == "__main__":
-    args = parse_args("Train and evaluate the Logistic Regression baseline")
-    run(prepare_data(args.data), n_iter=args.n_iter, cv_splits=args.cv_splits)
+    train_logistic_regression()

@@ -31,7 +31,7 @@ def stock_map(lines: pd.DataFrame, selected: tuple | None, focus: str = "All") -
     """
     cells = map_cells(lines)
     nrows, ncols = int(cells["y"].max()) + 1, int(cells["x"].max()) + 1
-    size = int(max(6, min(27, 280 / nrows, 620 / ncols) - 2))
+    size = int(max(6, min(27, 280 / nrows, 500 / ncols) - 2))
     fig = go.Figure()
     for status in STATUS_ORDER:
         s = cells[cells["status"] == status]
@@ -55,7 +55,7 @@ def stock_map(lines: pd.DataFrame, selected: tuple | None, focus: str = "All") -
                 selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)),
             ))
     style(fig, height=360, legend=True)
-    fig.update_layout(margin=dict(l=8, r=8, t=40, b=8), clickmode="event+select")
+    fig.update_layout(margin=dict(l=16, r=16, t=52, b=14), clickmode="event+select")
     fig.update_xaxes(range=[-0.7, ncols - 0.3], visible=False, showgrid=False, fixedrange=True)
     fig.update_yaxes(range=[nrows - 0.3, -0.7], visible=False, showgrid=False, fixedrange=True)
     return fig
@@ -105,4 +105,23 @@ def line_detail(row: pd.Series, over_days: float) -> go.Figure:
     style(fig, height=330, title=f"{row['store_id']} · {row['product_id']} · {row['date']:%d %b %Y}")
     fig.update_yaxes(title="Units", rangemode="tozero")
     fig.update_xaxes(title="")
+    return fig
+
+
+def status_breakdown(lines: pd.DataFrame, dim: str) -> go.Figure:
+    """Lines per status within each group (category, region or store type), the most at-risk group first."""
+    counts = lines.groupby([dim, "status"]).size().unstack(fill_value=0).reindex(columns=STATUS_ORDER, fill_value=0)
+    counts = counts.assign(_u=counts["Understock risk"] / counts.sum(axis=1)).sort_values("_u").drop(columns="_u")
+    fig = go.Figure()
+    for status in STATUS_ORDER:
+        fig.add_trace(go.Bar(
+            y=counts.index, x=counts[status], name=status, orientation="h", marker_color=STATUS_COLORS[status],
+            text=counts[status].where(counts[status] > 0, None), textposition="inside", insidetextanchor="middle",
+            textfont=dict(color="white" if status != "Overstock" else INK, size=12),
+            hovertemplate="%{y}: %{x} lines<extra>" + status + "</extra>",
+        ))
+    style(fig, height=max(300, 56 * len(counts) + 90), title="Lines by status", legend=True)
+    fig.update_layout(barmode="stack", bargap=0.35, legend=dict(traceorder="normal"))
+    fig.update_xaxes(title="Store-product lines", showgrid=True, gridcolor="#E4E9F3")
+    fig.update_yaxes(title="", showgrid=False)
     return fig

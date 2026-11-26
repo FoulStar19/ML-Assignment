@@ -14,7 +14,7 @@ from planning import apply_policy, demand_stats, load_data
 from predictor import (FEATURES, add_predictions, best_model_info, demand_model_info, load_best_model,
                        with_model_demand)
 from recommender import plan_transfers, recommend
-from theme import inject_css
+from theme import brand, hero, inject_css
 
 from data_transforming import OVERSTOCK_COVER_DAYS  # noqa: E402  (the label the models were trained on; src/backend is on the path)
 
@@ -57,9 +57,28 @@ class Settings:
     use_demand_model: bool
 
 
+PRESETS = {                      # plan style -> (lead time, order every, service level, review window)
+    "Lean": (3, 1, 0.90, 14),
+    "Balanced": (4, 1, 0.95, 14),
+    "Safe": (6, 2, 0.99, 14),
+}
+
+
+def _apply_preset() -> None:
+    choice = st.session_state.get("preset")
+    if choice in PRESETS:
+        st.session_state["lead"], st.session_state["review"], st.session_state["service"], st.session_state["window"] = PRESETS[choice]
+
+
+def _clear_preset() -> None:
+    st.session_state["preset"] = None            # a slider was moved by hand, so no preset describes the settings any more
+
+
 def render_sidebar(base: pd.DataFrame, has_demand_model: bool) -> Settings:
+    for key, value in (("preset", "Balanced"), ("lead", 4), ("review", 1), ("service", 0.95), ("window", 14)):
+        st.session_state.setdefault(key, value)
     with st.sidebar:
-        st.markdown('<div class="brand">Inventory Control</div>', unsafe_allow_html=True)
+        brand()
         with st.expander("Scope", expanded=True):
             all_stores = sorted(base["store_id"].unique())
             stores = st.multiselect("Stores", all_stores, default=all_stores)
@@ -67,11 +86,12 @@ def render_sidebar(base: pd.DataFrame, has_demand_model: bool) -> Settings:
             picked = st.date_input("Dates", value=(min_d, max_d), min_value=min_d, max_value=max_d)
 
         with st.expander("Ordering", expanded=True):
-            lead = st.slider("Lead time", 1, 10, 4, format="%d d")
-            review = st.slider("Order every", 1, 7, 1, format="%d d")
-            service = st.select_slider("Service level", options=[0.90, 0.95, 0.975, 0.99], value=0.95,
-                                       format_func=lambda v: f"{v:.1%}")
-            window = st.slider("Review window", 7, 60, 14, format="%d d")
+            st.segmented_control("Plan style", list(PRESETS), key="preset", on_change=_apply_preset)
+            lead = st.slider("Lead time", 1, 10, key="lead", format="%d d", on_change=_clear_preset)
+            review = st.slider("Order every", 1, 7, key="review", format="%d d", on_change=_clear_preset)
+            service = st.select_slider("Service level", options=[0.90, 0.95, 0.975, 0.99], key="service",
+                                       format_func=lambda v: f"{v:.1%}", on_change=_clear_preset)
+            window = st.slider("Review window", 7, 60, key="window", format="%d d", on_change=_clear_preset)
 
         with st.expander("More", expanded=False):
             watch_days = st.slider("Reorder-soon window", 0.5, 3.0, 0.5, step=0.5, format="%.1f d")
@@ -178,12 +198,8 @@ def main() -> None:
     s = render_sidebar(base, demand_info is not None)
     ctx = build_context(base, s, model, info, demand_info if s.use_demand_model else None)
 
-    models = info["name"] + (" · XGBoost demand" if ctx.demand else "")
-    st.markdown(
-        f'<div class="head"><h1>Smart Inventory Replenishment</h1>'
-        f'<div class="meta">{ctx.asof_date:%d %b %Y} · {models}</div></div>',
-        unsafe_allow_html=True,
-    )
+    models = [info["name"]] + (["XGBoost demand"] if ctx.demand else [])
+    hero(f"{ctx.asof_date:%d %b %Y}", models, ctx.n_under, ctx.n_healthy, ctx.n_over)
 
     tab_over, tab_rec, tab_trends, tab_models = st.tabs(["Overview", "Actions", "Trends", "Models"])
     with tab_over:

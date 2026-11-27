@@ -1,54 +1,54 @@
 column,gain,shap_mean_abs
-Log_Effective_Price,347.62884521484375,0.13367862
-Marketing_Spend,339.0324401855469,0.12817822
-Customer_Footfall,270.0477294921875,0.119534634
-Unit_Price,225.5367889404297,0.10458586
-Price_Gap,125.09477233886719,0.08771477
-Promotion,604.819580078125,0.07290752
-Holiday,841.7398071289062,0.07007736
-Weather_Condition_Sunny,144.0295867919922,0.044976357
-Month,30.049957275390625,0.037503477
-Product_Category_Electronics,51.172481536865234,0.02212789
-Weather_Condition_Stormy,43.26441955566406,0.013420381
-Product_Category_Groceries,544.8687133789062,0.013191759
-Product_Category_Beauty,33.089412689208984,0.012960802
-Weather_Condition_Snowy,27.190763473510742,0.010736818
-Product_Category_Clothing,24.851810455322266,0.010176207
-Weather_Condition_Cloudy,37.055335998535156,0.008765633
-Discount_Percent,9.301674842834473,0.007207933
-Weather_Condition_Rainy,16.545331954956055,0.006638927
-Product_Category_Home & Kitchen,11.13947582244873,0.004753624
-Store_Type_Hypermarket,117.55663299560547,0.0025992978
-Product_Subcategory_Dairy,78.96314239501953,0.0025488057
-Store_Type_Online Store,88.2462158203125,0.0025206641
-Product_Subcategory_Snacks,7.908392429351807,0.0020946763
-Product_Category_Toys,27.959964752197266,0.0018239145
-Product_Subcategory_Decor,9.001726150512695,0.0018118332
-Product_Subcategory_Skincare,13.20064640045166,0.0014755777
-Product_Subcategory_Audio,10.123197555541992,0.0013517693
-Store_Type_Convenience Store,7.8787150382995605,0.0012410029
-Product_Category_Sports,16.44515609741211,0.0012138281
-Store_Type_Supermarket,10.06750774383545,0.00087039394
-Product_Subcategory_Laptop,7.258546829223633,0.00069563824
-Product_Subcategory_Fragrance,7.930845737457275,0.0006563916
-Product_Subcategory_Educational,7.461925506591797,0.00050723506
-Product_Subcategory_Women,13.327335357666016,0.00046309485
-Product_Subcategory_Furniture,6.412489891052246,0.0004136691
-Product_Subcategory_Beverages,10.527068138122559,0.00034732008
-Product_Subcategory_Board Games,16.475099563598633,0.00032257746
-Product_Subcategory_Fresh Produce,9.134964942932129,0.00030123943
-Product_Subcategory_Mobile,8.174973487854004,0.00030088908
-Product_Subcategory_Team Sports,9.257150650024414,0.00027832942
-Product_Subcategory_Fitness,11.118844985961914,0.00024296908
-Product_Subcategory_Outdoor,7.470237731933594,0.00018582316
-Product_Subcategory_Puzzles,11.518442153930664,0.00015715808
-Product_Subcategory_Makeup,6.848789215087891,0.0001537607
-Product_Subcategory_Footwear,17.15399742126465,0.00010758289
-Product_Subcategory_Men,8.592683792114258,0.000105143255
-Product_Subcategory_Kids,10.538418769836426,9.562739e-05
-Product_Subcategory_Action Figures,12.762474060058594,7.4253505e-05
-Product_Subcategory_Haircare,8.451961517333984,3.8873688e-05
-Product_Subcategory_Cookware,0.0,0.0
+Log_Effective_Price,492.20501708984375,0.15855502
+Marketing_Spend,535.3836059570312,0.12693484
+Customer_Footfall,374.4568786621094,0.12080957
+Unit_Price,149.15994262695312,0.09571217
+Price_Gap,178.00616455078125,0.08925033
+Promotion,421.0506896972656,0.07635785
+Holiday,1141.33349609375,0.070886195
+Product_Category_Electronics,5.802125453948975,0.039716307
+Weather_Condition_Sunny,260.363525390625,0.038370702
+Month,22.18583106994629,0.0379385
+Weather_Condition_Stormy,50.127586364746094,0.015400752
+Product_Category_Beauty,48.45942687988281,0.014271706
+Weather_Condition_Snowy,32.953861236572266,0.014164583
+Weather_Condition_Rainy,22.015907287597656,0.013015108
+Discount_Percent,6.4509100914001465,0.010946438
+Product_Category_Clothing,19.433677673339844,0.009928781
+Product_Category_Home & Kitchen,5.018172740936279,0.009095871
+Product_Category_Toys,6.7817301750183105,0.0036147293
+Weather_Condition_Cloudy,13.454598426818848,0.0031622227
+Product_Subcategory_Decor,6.705058574676514,0.0019436073
+Product_Subcategory_Snacks,5.375305652618408,0.0017396597
+Store_Type_Convenience Store,5.010133266448975,0.0016245621
+Product_Subcategory_Skincare,7.28096866607666,0.0015323748
+Product_Subcategory_Audio,6.277312755584717,0.0013444878
+Product_Category_Sports,10.678115844726562,0.0012760714
+Product_Subcategory_Fragrance,4.629195213317871,0.0007696297
+Product_Subcategory_Mobile,4.1153178215026855,0.00056122465
+Product_Subcategory_Dairy,3.8648366928100586,0.0005391704
+Product_Subcategory_Furniture,3.624667167663574,0.00050325715
+Product_Category_Groceries,84.21501159667969,0.0005023618
+Product_Subcategory_Educational,6.485227108001709,0.00049040874
+Product_Subcategory_Fitness,4.9354939460754395,0.00033258565
+Product_Subcategory_Outdoor,3.9902470111846924,0.00018526796
+Product_Subcategory_Women,3.8671371936798096,0.00015478407
+Product_Subcategory_Men,3.5305685997009277,0.00013901599
 Product_Subcategory_Accessories,0.0,0.0
+Product_Subcategory_Action Figures,0.0,0.0
+Product_Subcategory_Cookware,0.0,0.0
+Product_Subcategory_Board Games,0.0,0.0
+Product_Subcategory_Beverages,0.0,0.0
+Product_Subcategory_Laptop,0.0,0.0
+Product_Subcategory_Fresh Produce,0.0,0.0
+Product_Subcategory_Footwear,0.0,0.0
+Product_Subcategory_Haircare,0.0,0.0
+Product_Subcategory_Makeup,0.0,0.0
+Product_Subcategory_Puzzles,0.0,0.0
+Product_Subcategory_Kids,0.0,0.0
+Product_Subcategory_Team Sports,0.0,0.0
 Product_Subcategory_Sportswear,0.0,0.0
 Product_Subcategory_Storage,0.0,0.0
+Store_Type_Hypermarket,0.0,0.0
+Store_Type_Supermarket,0.0,0.0
+Store_Type_Online Store,0.0,0.0

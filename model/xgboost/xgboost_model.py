@@ -2,32 +2,32 @@
 
 Run on its own (after `python src/backend/pipeline.py --skip-modeling` has made train.csv / test.csv):
 
-    python model/xgboost/xgboost_model.py                 # full run (about 10-20 min on a laptop)
-    python model/xgboost/xgboost_model.py --trials 20     # faster run
-    python model/xgboost/xgboost_model.py --quick         # 2-minute smoke test, results are NOT final
+    python model/xgboost/xgboost_model.py                 # full run (a few minutes)
+    python model/xgboost/xgboost_model.py --trials 30     # faster run
+    python model/xgboost/xgboost_model.py --quick         # smoke test only, results are NOT final
 
 or through the pipeline:  python src/backend/pipeline.py
+Everything is written to model/xgboost/outputs/ and read back by xgboost_results.py.
 
-Everything is written to model/xgboost/outputs/ (see README.md in this folder for the file list).
+Why XGBoost: gradient boosting builds many small trees one after another, each fitted to the mistakes of the
+trees before it. It captures non-linear effects and interactions without manual feature work and has many
+regularisation settings, which makes it a strong model for tabular data.
 
-Why XGBoost: gradient boosting builds many small trees one after another, and every new tree is fitted to the
-mistakes (residuals) of the trees before it. It captures non-linear effects and interactions
-(e.g. Promotion x Holiday) without manual feature work, handles one-hot features and missing values natively
-and has many regularisation settings, which makes it a strong model for tabular data.
-
-Method, in the order of the assignment's Part A / Part B:
-    1. Same data preparation as the other models: the pipeline's time-based train/test split (test = latest 30% of dates).
-    2. Reference points: mean predictor and a single decision tree (shows what boosting adds).
-    3. Default XGBoost, scored with time-series cross-validation (CV) on the training period only.
-    4. Hyper-parameter tuning with Optuna (TPE, a smarter search than grid/random) + median pruning, scored by
-       time-series CV, so the test set is never used to choose settings.
-    5. Final fit on the whole training period, scored once on the untouched test period (MAE, MSE, RMSE, R2 + WAPE, bias).
-    6. Interpretation: gain importance, grouped permutation importance, SHAP, partial dependence, promotion/holiday effect.
-    7. Error analysis: residuals, error by segment, worst predictions, under/over-prediction.
-    8. Robustness: 5 random seeds, performance over time, walk-forward retraining (does it adapt as new data comes in?).
+Method (follows Part A / Part B of the assignment):
+    1. Same data as the other models: the pipeline's time-based split (test = latest 30% of dates).
+    2. Reference points: mean predictor and a single decision tree.
+    3. Default XGBoost scored with time-series cross-validation (CV) on the training period only.
+    4. Hyper-parameter tuning with Optuna (TPE search + pruning) scored by time-series CV.
+       The test set is never used to choose settings.
+    5. Final model fitted on the training period, scored once on the test period.
+       Also evaluated: an ensemble (average) of the best tuned settings.
+    6. Interpretation: gain / permutation / SHAP importance, partial dependence, promotion and holiday effect.
+    7. Error analysis: residuals, error by segment, worst predictions.
+    8. Robustness: 5 random seeds and walk-forward retraining over the test period.
 """
 import argparse
 import json
+import os
 import platform
 import sys
 import time
@@ -43,6 +43,7 @@ import numpy as np
 import optuna
 import pandas as pd
 import xgboost as xgb
+from sklearn.metrics import r2_score
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
@@ -51,30 +52,28 @@ from xgboost import XGBRegressor
 # 0. SETTINGS
 # ─────────────────────────────────────────────
 HERE = Path(__file__).resolve().parent
+ROOT_DIR = HERE.parents[1]                             # model/xgboost/xgboost_model.py -> project root
+OUT_DIR = HERE / "outputs"
 
-# The one path defined here: where the shared data-preparation code lives, so it can be imported.
-# Everything else (column names, files, seed, metrics, loading) comes from those modules.
-BACKEND_DIR = HERE.parents[1] / "src" / "backend"          # model/xgboost/xgboost_model.py -> <project>/src/backend
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-from data_modeling import (CAT_COLS, DATE_COL, FLAG_COLS, LINE, NUM_COLS, PREPROCESSOR_FILE, ROOT_DIR, SEED,   # noqa: E402
-                           STOCK_COLS, TARGET, get_feature_columns, load_train_test, model_output_dir)
-if ROOT_DIR not in sys.path:                               # so `model.evaluation` can be imported when run on its own
-    sys.path.insert(0, ROOT_DIR)
-from model.evaluation import clipped_predict as predict    # noqa: E402  (predictions clipped at 0)
-from model.evaluation import regression_metrics as metrics # noqa: E402  (MAE, MSE, RMSE, R2, WAPE, bias)
+# Column names and file paths come from the data-preparation code, so they are defined in one place only.
+if str(ROOT_DIR / "src" / "backend") not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR / "src" / "backend"))
+from data_modeling import (CAT_COLS, DATE_COL, NUM_COLS, PREPROCESSOR_FILE, STOCK_COLS,   # noqa: E402
+                           TARGET, TEST_FILE, TRAIN_FILE)
 
-OUT_DIR = Path(model_output_dir(HERE.name))                # <project>/model/xgboost/outputs
-
-# Settings that belong to this model only
-N_TRIALS = 60            # Optuna trials. TPE needs roughly 10 x (number of tuned settings) to be reliable.
-CV_SPLITS = 5            # TimeSeriesSplit folds: always train on the past, validate on the next block of dates
+LINE = "─" * 45
+SEED = 42
+N_TRIALS = 80            # Optuna trials (TPE needs roughly 10 x the number of tuned settings)
+CV_SPLITS = 5            # time-series CV folds: always train on the past, validate on the next block of dates
+ENSEMBLE_SIZE = 5        # number of best tuned settings averaged in the ensemble check
 WALK_FORWARD_BLOCKS = 4  # the test period is cut into this many blocks for the "does it adapt over time" check
 SHAP_ROWS = 2000         # test rows used for SHAP / partial dependence (keeps it fast)
-FIXED = dict(tree_method="hist", n_jobs=-1, random_state=SEED, eval_metric="rmse")   # same for every XGBoost model here
-SEGMENT_CATS = [c for c in ["Product_Category", "Store_Type", "Weather_Condition"] if c in CAT_COLS]   # error-by-segment charts
-PDP_COLS = [c for c in ["Unit_Price", "Marketing_Spend", "Customer_Footfall", "Discount_Percent", "Price_Gap"]
-            if c in NUM_COLS]                                         # numeric inputs drawn as partial-dependence curves
+FIXED = dict(tree_method="hist", n_jobs=-1, random_state=SEED, eval_metric="rmse")   # same for every model here
+
+# Category and subcategory describe the same thing, so they are reported as ONE feature
+# (shuffled alone, each looks unimportant because the other still carries the information).
+MERGED = {"Product_Category": "Product (category + subcategory)",
+          "Product_Subcategory": "Product (category + subcategory)"}
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -84,14 +83,29 @@ BLUE, ORANGE, GREY, GREEN, RED = "#3B5BDB", "#F5A524", "#8A94A6", "#22A27B", "#E
 
 
 # ─────────────────────────────────────────────
-# 1. DATA (the pipeline's train.csv / test.csv, so every model sees exactly the same rows and features)
+# 1. DATA
 # ─────────────────────────────────────────────
 def load_data():
-    """(train, test, model input columns). The loading and the time-split checks are shared with every model."""
-    train, test = load_train_test()
-    # Inventory_Level, Returns and Sales_Amount are NOT inputs: they are only known after (or because of) the sale,
-    # so using them to predict Units_Sold would leak the answer. The pipeline already leaves them out.
-    return train, test, get_feature_columns(train)
+    """Read the pipeline's train.csv / test.csv, so every model sees exactly the same rows and features."""
+    for f in (TRAIN_FILE, TEST_FILE):
+        if not os.path.exists(f):
+            raise FileNotFoundError(f"{f} not found. Run `python src/backend/pipeline.py --skip-modeling` first.")
+    train = pd.read_csv(TRAIN_FILE, parse_dates=[DATE_COL])
+    test = pd.read_csv(TEST_FILE, parse_dates=[DATE_COL])
+
+    # Model inputs = everything except the target, the date and the stock/ID columns.
+    # (Inventory_Level, Returns and Sales_Amount are not inputs: they would leak the answer.)
+    non_features = [TARGET, DATE_COL] + STOCK_COLS
+    features = [c for c in train.columns if c not in non_features]
+    if features != [c for c in test.columns if c not in non_features]:
+        raise ValueError("train.csv and test.csv have different feature columns; re-run the pipeline.")
+
+    # Safety checks: the split must be by time with no overlap, otherwise the test score is too optimistic.
+    if not train[DATE_COL].is_monotonic_increasing:
+        raise ValueError("train.csv is not sorted by date; CV folds would not respect time order.")
+    if train[DATE_COL].max() >= test[DATE_COL].min():
+        raise ValueError("train and test dates overlap; the split is not a clean time-based split.")
+    return train, test, features
 
 
 def decode(df, prefix):
@@ -100,14 +114,8 @@ def decode(df, prefix):
     return df[cols].idxmax(axis=1).str[len(prefix) + 1:]
 
 
-# Category and subcategory describe the same thing (every subcategory belongs to exactly one category), so they are
-# reported as ONE feature. Separately, each looks unimportant in permutation importance because the other one still
-# carries the information when it is shuffled.
-MERGED = {"Product_Category": "Product (category + subcategory)", "Product_Subcategory": "Product (category + subcategory)"}
-
-
 def feature_groups(columns):
-    """{original feature: [model columns]}. One-hot columns are grouped back so importance is per real feature."""
+    """{original feature: [model columns]}: one-hot columns are grouped back, so importance is per real feature."""
     groups = {}
     for c in columns:
         base = next((cat for cat in CAT_COLS if c.startswith(cat + "_")), c)
@@ -116,13 +124,34 @@ def feature_groups(columns):
 
 
 # ─────────────────────────────────────────────
-# 2. METRICS (metrics() and predict() are imported from evaluation.py, see the top of the file)
+# 2. METRICS AND CROSS-VALIDATION
 # ─────────────────────────────────────────────
+def metrics(y, pred):
+    """MAE, MSE, RMSE, R2 (required by the assignment) + WAPE and bias (useful for stock planning).
+
+    WAPE = total absolute error / total units sold ("we miss about X% of demand").
+    bias = average (prediction - actual): negative = under-prediction = stock-out risk.
+    """
+    y, pred = np.asarray(y, float), np.asarray(pred, float)
+    err = pred - y
+    mse = float(np.mean(err ** 2))
+    return {"mae": float(np.mean(np.abs(err))), "mse": mse, "rmse": float(np.sqrt(mse)),
+            "r2": float(r2_score(y, pred)), "wape": float(np.abs(err).sum() / y.sum()), "bias": float(err.mean())}
+
+
+def predict(model, X):
+    return np.clip(model.predict(X), 0, None)       # units sold cannot be negative
+
+
+def new_model(params=None, **extra):
+    return XGBRegressor(**(params or {}), **{**FIXED, **extra})
+
+
 def cv_scores(params, X, y, n_splits=CV_SPLITS):
-    """Time-series cross-validation: fold k trains on everything before block k and is scored on block k."""
+    """Time-series CV: fold k trains on everything before block k and is scored on block k."""
     rows = []
     for tr, va in TimeSeriesSplit(n_splits=n_splits).split(X):
-        m = XGBRegressor(**params, **FIXED).fit(X.iloc[tr], y.iloc[tr])
+        m = new_model(params).fit(X.iloc[tr], y.iloc[tr])
         rows.append(metrics(y.iloc[va], predict(m, X.iloc[va])))
     cv = pd.DataFrame(rows)
     return {f"cv_{k}_{s}": float(getattr(cv[k], s)()) for k in ("mae", "mse", "rmse", "r2") for s in ("mean", "std")}
@@ -132,20 +161,21 @@ def cv_scores(params, X, y, n_splits=CV_SPLITS):
 # 3. HYPER-PARAMETER TUNING (Optuna)
 # ─────────────────────────────────────────────
 def suggest_params(trial):
-    """Search space. Ranges follow common XGBoost practice; the comments say what each setting controls."""
+    """Search space. The ranges are wide on purpose: an earlier, narrower search kept choosing values at the edge
+    (max_depth 2, gamma and n_estimators near their limits), which means the best setting lay outside the range. The data is noisy,
+    so strong regularisation (shallow trees, large gamma / min_child_weight) is allowed."""
     p = {
-        # Loss function. Units sold are counts that are right-skewed, so Poisson/Tweedie losses are tried
-        # against plain squared error. Optuna decides with the CV score, not us.
+        # Loss function: units sold are right-skewed counts, so Poisson / Tweedie are tried against squared error.
         "objective": trial.suggest_categorical("objective", ["reg:squarederror", "count:poisson", "reg:tweedie"]),
-        "n_estimators": trial.suggest_int("n_estimators", 100, 800, step=50),     # number of trees
-        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),  # step size of each tree (small = careful)
-        "max_depth": trial.suggest_int("max_depth", 2, 7),                         # tree depth = interaction order (over-fitting)
-        "min_child_weight": trial.suggest_float("min_child_weight", 1, 30, log=True),  # min data in a leaf (smooths noisy leaves)
-        "subsample": trial.suggest_float("subsample", 0.5, 1.0),                   # share of rows per tree (like bagging)
-        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.4, 1.0),     # share of columns per tree
-        "gamma": trial.suggest_float("gamma", 0.0, 5.0),                           # min loss gain needed to split
-        "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),       # L1 regularisation
-        "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 30.0, log=True),     # L2 regularisation
+        "n_estimators": trial.suggest_int("n_estimators", 100, 1500, step=50),         # number of trees
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),    # step size of each tree
+        "max_depth": trial.suggest_int("max_depth", 1, 6),                             # interaction order / over-fitting
+        "min_child_weight": trial.suggest_float("min_child_weight", 1, 50, log=True),  # min data in a leaf
+        "subsample": trial.suggest_float("subsample", 0.5, 1.0),                       # share of rows per tree
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.3, 1.0),         # share of columns per tree
+        "gamma": trial.suggest_float("gamma", 0.0, 10.0),                              # min loss gain needed to split
+        "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 20.0, log=True),           # L1 regularisation
+        "reg_lambda": trial.suggest_float("reg_lambda", 1e-2, 50.0, log=True),         # L2 regularisation
     }
     if p["objective"] == "reg:tweedie":
         p["tweedie_variance_power"] = trial.suggest_float("tweedie_variance_power", 1.05, 1.95)
@@ -159,29 +189,36 @@ def tune(X, y, n_trials, n_splits):
     def objective(trial):
         params, scores = suggest_params(trial), []
         for step, (tr, va) in enumerate(splits):
-            m = XGBRegressor(**params, **FIXED).fit(X.iloc[tr], y.iloc[tr])
+            m = new_model(params).fit(X.iloc[tr], y.iloc[tr])
             scores.append(metrics(y.iloc[va], predict(m, X.iloc[va]))["rmse"])
             trial.report(float(np.mean(scores)), step)
-            if trial.should_prune():                      # clearly worse than the median trial -> stop early, save time
+            if trial.should_prune():                      # clearly worse than the median trial -> stop early
                 raise optuna.TrialPruned()
         return float(np.mean(scores))
-
-    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=SEED),
-                                pruner=optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=1))
 
     def progress(study, trial):
         if (trial.number + 1) % 10 == 0 or trial.number + 1 == n_trials:
             print(f"   trial {trial.number + 1:>3}/{n_trials}  best CV RMSE so far: {study.best_value:.4f}")
 
+    study = optuna.create_study(direction="minimize",
+                                sampler=optuna.samplers.TPESampler(seed=SEED, multivariate=True, n_startup_trials=20),
+                                pruner=optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=1))
     study.optimize(objective, n_trials=n_trials, callbacks=[progress])
     return study
+
+
+def ensemble_of_best_trials(study, Xtr, ytr, Xte, yte, k=ENSEMBLE_SIZE):
+    """Part B 'combine models': average the k best tuned settings (chosen by CV) and score on the test period."""
+    finished = sorted([t for t in study.trials if t.value is not None], key=lambda t: t.value)[:k]
+    preds = [predict(new_model(t.params).fit(Xtr, ytr), Xte) for t in finished]
+    return {"members": len(finished), "test": metrics(yte, np.mean(preds, axis=0))}
 
 
 # ─────────────────────────────────────────────
 # 4. INTERPRETATION
 # ─────────────────────────────────────────────
 def grouped_permutation(model, X, y, groups, n_repeats=5):
-    """How much worse does RMSE get when one real feature is shuffled? (all its one-hot columns shuffled together)"""
+    """How much worse does RMSE get when one real feature is shuffled? (all its one-hot columns together)"""
     rng = np.random.default_rng(SEED)
     base = metrics(y, predict(model, X))["rmse"]
     out = {}
@@ -196,10 +233,9 @@ def grouped_permutation(model, X, y, groups, n_repeats=5):
 
 
 def shap_values(model, X):
-    """SHAP values from XGBoost itself (pred_contribs): how many units each column added/removed per row.
-    Last column is the base value. For Poisson/Tweedie the contributions are on the log scale."""
-    contrib = model.get_booster().predict(xgb.DMatrix(X), pred_contribs=True)
-    return contrib[:, :-1]
+    """SHAP values from XGBoost itself (pred_contribs). The last column is the base value, so it is dropped.
+    For Poisson / Tweedie the contributions are on the log scale."""
+    return model.get_booster().predict(xgb.DMatrix(X), pred_contribs=True)[:, :-1]
 
 
 def effect_curve(model, X, col, grid):
@@ -213,7 +249,7 @@ def effect_curve(model, X, col, grid):
 
 
 def scaler_info():
-    """Mean/std the pipeline used to standardise numeric columns, so charts can show real units (RM, visitors ...)."""
+    """Mean/std the pipeline used to standardise numeric columns, so charts can show real units."""
     try:
         sc = joblib.load(PREPROCESSOR_FILE).named_transformers_["num"]
         return dict(zip(NUM_COLS, zip(sc.mean_, sc.scale_)))
@@ -221,16 +257,49 @@ def scaler_info():
         return {}
 
 
+def importance_table(model, Xte, yte, features, groups):
+    """Feature importance three ways (gain, permutation, SHAP). They should agree; if not, be careful with the story."""
+    gain = model.get_booster().get_score(importance_type="gain")
+    gain = pd.Series({c: gain.get(c, 0.0) for c in features})
+    sample = Xte.sample(min(SHAP_ROWS, len(Xte)), random_state=SEED)
+    sv = shap_values(model, sample)
+    shap_col = pd.Series(np.abs(sv).mean(axis=0), index=features)
+    perm = grouped_permutation(model, Xte, yte, groups)
+    table = pd.DataFrame({
+        "gain": {g: gain[c].sum() / gain.sum() for g, c in groups.items()},
+        "permutation_rmse_increase": {g: perm[g][0] for g in groups},
+        "permutation_std": {g: perm[g][1] for g in groups},
+        "shap_mean_abs": {g: shap_col[c].sum() for g, c in groups.items()},
+    }).sort_values("permutation_rmse_increase", ascending=False)
+    table.index.name = "feature"
+    by_column = pd.DataFrame({"gain": gain, "shap_mean_abs": shap_col}).sort_values("shap_mean_abs", ascending=False)
+    return table, by_column, sample, sv
+
+
+def business_effects(model, Xte, sample):
+    """What a promotion / holiday adds on average, and how the main numeric inputs act (shown in real units)."""
+    effects, pdp, sc = {}, {}, scaler_info()
+    for flag in ("Promotion", "Holiday"):
+        on, off = Xte.copy(), Xte.copy()
+        on[flag], off[flag] = 1, 0
+        effects[flag] = float(predict(model, on).mean() - predict(model, off).mean())
+    for c in ["Unit_Price", "Marketing_Spend", "Customer_Footfall", "Discount_Percent"]:
+        grid = np.quantile(sample[c], np.linspace(0.02, 0.98, 15))
+        mean, scale = sc.get(c, (0.0, 1.0))
+        pdp[c] = {"x": grid * scale + mean, "y": effect_curve(model, sample, c, grid)}
+    return effects, pdp
+
+
 # ─────────────────────────────────────────────
 # 5. ERROR ANALYSIS
 # ─────────────────────────────────────────────
 def segment_table(test, y, pred):
     """MAE / RMSE / bias per group: where does the model do well, and where does it struggle?"""
-    seg = {c: decode(test, c) for c in SEGMENT_CATS}
-    for flag in FLAG_COLS:
-        seg[flag] = test[flag].map({0: "No", 1: "Yes"})
+    seg = {c: decode(test, c) for c in ["Product_Category", "Store_Type", "Weather_Condition"]}
+    seg["Promotion"] = test["Promotion"].map({0: "No", 1: "Yes"})
+    seg["Holiday"] = test["Holiday"].map({0: "No", 1: "Yes"})
     seg["Test month"] = test[DATE_COL].dt.strftime("%Y-%m")
-    # Actual demand band: reveals the typical regression-to-the-mean error (big sales days are under-predicted).
+    # Actual demand band: reveals the usual regression-to-the-mean error (big sales days are under-predicted).
     seg["Actual demand band"] = pd.qcut(pd.Series(y).rank(method="first"), 4,
                                         labels=["Q1 lowest", "Q2", "Q3", "Q4 highest"]).astype(str)
     rows = []
@@ -238,29 +307,66 @@ def segment_table(test, y, pred):
         labels = pd.Series(np.asarray(labels), index=range(len(y)))
         for g in sorted(labels.unique()):
             idx = labels[labels == g].index.to_numpy()
-            m = metrics(y[idx], pred[idx])
-            rows.append({"segment": name, "group": g, "n": len(idx), "mean_actual": float(y[idx].mean()), **m})
+            rows.append({"segment": name, "group": g, "n": len(idx), "mean_actual": float(y[idx].mean()),
+                         **metrics(y[idx], pred[idx])})
     return pd.DataFrame(rows)
 
 
-def walk_forward(params, train, test, features):
+def error_summary(seg, y, pred):
+    """A few headline numbers about the errors, for the report."""
+    err = pred - y
+    band = seg[seg["segment"] == "Actual demand band"].set_index("group")
+    by_cat = seg[seg["segment"] == "Product_Category"].sort_values("mae")
+    return {
+        "share_under_predicted": float((err < 0).mean()),
+        "within_5_units": float((np.abs(err) <= 5).mean()),
+        "within_20_percent": float((np.abs(err) <= 0.2 * y).mean()),
+        "bias_lowest_demand_quarter": float(band.loc["Q1 lowest", "bias"]),
+        "bias_highest_demand_quarter": float(band.loc["Q4 highest", "bias"]),
+        "hardest_category": by_cat.iloc[-1]["group"],
+        "easiest_category": by_cat.iloc[0]["group"],
+    }
+
+
+def save_predictions(test, y, default_pred, pred):
+    """predictions.csv (every test row) and worst_predictions.csv (the 50 largest errors)."""
+    err = pred - y
+    preds = pd.DataFrame({"Date": test[DATE_COL].dt.date, "Transaction_ID": test["Transaction_ID"],
+                          "Product_ID": test["Product_ID"], "Product_Category": decode(test, "Product_Category"),
+                          "Store_Type": decode(test, "Store_Type"), "Units_Sold": y, "pred_default": default_pred,
+                          "pred_tuned": pred, "error": err, "abs_error": np.abs(err)})
+    preds.to_csv(OUT_DIR / "predictions.csv", index=False)
+    preds.sort_values("abs_error", ascending=False).head(50).to_csv(OUT_DIR / "worst_predictions.csv", index=False)
+
+
+# ─────────────────────────────────────────────
+# 6. ROBUSTNESS
+# ─────────────────────────────────────────────
+def seed_stability(params, Xtr, ytr, Xte, yte, n_seeds=5):
+    """Same settings, different random seeds: is the score stable?"""
+    rows = [metrics(yte, predict(new_model(params, random_state=s).fit(Xtr, ytr), Xte)) for s in range(n_seeds)]
+    df = pd.DataFrame(rows)
+    return {f"{k}_{s}": float(getattr(df[k], s)()) for k in ("mae", "rmse", "r2") for s in ("mean", "std")}
+
+
+def walk_forward(params, train, test, features, static_pred):
     """Does the model adapt over time? Cut the test period into blocks; for each block retrain on everything
-    that happened before it (train + earlier blocks) and predict the block. Compared with the one-off model
-    that was trained once and never updated."""
-    dates = np.sort(test[DATE_COL].unique())
+    before it (train + earlier blocks) and predict the block. Compared with the model trained once and never updated."""
+    y = test[TARGET].to_numpy()
     rows = []
-    for k, block in enumerate(np.array_split(dates, WALK_FORWARD_BLOCKS), start=1):
-        in_block = test[DATE_COL].isin(block)
+    for k, block in enumerate(np.array_split(np.sort(test[DATE_COL].unique()), WALK_FORWARD_BLOCKS), start=1):
+        in_block = test[DATE_COL].isin(block).to_numpy()
         history = pd.concat([train, test[test[DATE_COL] < block.min()]])
-        m = XGBRegressor(**params, **FIXED).fit(history[features], history[TARGET])
+        m = new_model(params).fit(history[features], history[TARGET])
         rows.append({"block": k, "from": str(pd.Timestamp(block.min()).date()), "to": str(pd.Timestamp(block.max()).date()),
-                     "n": int(in_block.sum()), "train_rows": len(history), "mask": in_block.to_numpy(),
-                     "retrained": metrics(test.loc[in_block, TARGET], predict(m, test.loc[in_block, features]))})
+                     "n": int(in_block.sum()), "train_rows": len(history),
+                     "retrained": metrics(y[in_block], predict(m, test.loc[in_block, features])),
+                     "static": metrics(y[in_block], static_pred[in_block])})
     return rows
 
 
 # ─────────────────────────────────────────────
-# 6. PLOTS
+# 7. PLOTS (one small function per figure; each is saved as a PNG in outputs/)
 # ─────────────────────────────────────────────
 def save(fig, name):
     fig.tight_layout()
@@ -268,23 +374,21 @@ def save(fig, name):
     plt.close(fig)
 
 
-def plot_all(ctx):
-    """Draw every figure from the results collected in train_xgboost (ctx = dict of results)."""
-    y, p, test = ctx["y"], ctx["pred"], ctx["test"]
-
-    # Default vs tuned, the four required metrics side by side
+def plot_default_vs_tuned(c):
     fig, axes = plt.subplots(1, 4, figsize=(11, 3))
     for ax, k in zip(axes, ["mae", "mse", "rmse", "r2"]):
-        vals = [ctx["default_test"][k], ctx["tuned_test"][k]]
+        vals = [c["default_test"][k], c["tuned_test"][k]]
         ax.bar(["Default", "Tuned"], vals, color=[GREY, BLUE])
-        ax.set_title(k.upper() if k != "r2" else "R²")
+        ax.set_title("R²" if k == "r2" else k.upper())
         for i, v in enumerate(vals):
             ax.text(i, v, f"{v:.3f}" if k == "r2" else f"{v:.1f}", ha="center", va="bottom")
         ax.set_ylim(0, max(vals) * 1.15)
     fig.suptitle("XGBoost on the test period: default vs tuned")
     save(fig, "default_vs_tuned.png")
 
-    # Predicted vs actual + weekly totals over time (what a planner sees)
+
+def plot_predicted_vs_actual(c):
+    y, p, test = c["y"], c["pred"], c["test"]
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
     axes[0].scatter(y, p, s=4, alpha=0.25, color=BLUE)
     lim = max(y.max(), p.max())
@@ -299,59 +403,61 @@ def plot_all(ctx):
     axes[1].tick_params(axis="x", rotation=30)
     save(fig, "predicted_vs_actual.png")
 
-    # Residuals
-    res = p - y
+
+def plot_residuals(c):
+    res = c["pred"] - c["y"]
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.6))
     axes[0].hist(res, bins=60, color=BLUE, alpha=0.85)
     axes[0].axvline(0, color=RED, lw=1)
     axes[0].set(title=f"Residuals (predicted − actual), mean {res.mean():+.2f}", xlabel="Units")
-    axes[1].scatter(p, res, s=4, alpha=0.25, color=BLUE)
+    axes[1].scatter(c["pred"], res, s=4, alpha=0.25, color=BLUE)
     axes[1].axhline(0, color=RED, lw=1)
     axes[1].set(title="Residuals vs predicted", xlabel="Predicted units", ylabel="Error")
     save(fig, "residuals.png")
 
-    # Error by segment
-    seg = ctx["segments"]
+
+def plot_error_by_segment(c):
     fig, axes = plt.subplots(2, 3, figsize=(12, 6))
-    for ax, name in zip(axes.ravel(), SEGMENT_CATS + FLAG_COLS + ["Actual demand band"]):
-        s = seg[seg["segment"] == name]
+    for ax, name in zip(axes.ravel(), ["Product_Category", "Store_Type", "Weather_Condition",
+                                       "Promotion", "Holiday", "Actual demand band"]):
+        s = c["segments"][c["segments"]["segment"] == name]
         ax.bar(s["group"], s["mae"], color=BLUE)
         ax.set_title(f"MAE by {name.replace('_', ' ')}")
         ax.tick_params(axis="x", rotation=40)
     save(fig, "error_by_segment.png")
 
-    # Importance: gain, permutation, SHAP (all per real feature)
-    imp = ctx["importance"].sort_values("shap_mean_abs")
+
+def plot_feature_importance(c):
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
     for ax, col, title, colour in zip(axes, ["gain", "permutation_rmse_increase", "shap_mean_abs"],
                                       ["Gain (built-in)", "Permutation (RMSE increase)", "SHAP (mean |impact|)"],
                                       [BLUE, GREEN, ORANGE]):
-        d = imp.sort_values(col)
+        d = c["importance"].sort_values(col)
         ax.barh(d.index, d[col], color=colour)
         ax.set_title(title)
     save(fig, "feature_importance.png")
 
-    # SHAP beeswarm per model column (top 15)
-    try:
-        import shap
-        plt.figure(figsize=(8, 6))
-        shap.summary_plot(ctx["shap"], ctx["X_shap"], max_display=15, show=False)
-        plt.tight_layout()
-        plt.savefig(OUT_DIR / "shap_summary.png")
-        plt.close()
-    except Exception as err:                                # the numbers are saved anyway; only the picture is skipped
-        print(f"   (SHAP picture skipped: {err})")
 
-    # Partial dependence of the numeric inputs, shown in real units
-    cols = list(ctx["pdp"])
+def plot_shap_summary(c):
+    import shap                                           # optional library: skipped by plot_all if missing
+    plt.figure(figsize=(8, 6))
+    shap.summary_plot(c["shap"], c["X_shap"], max_display=15, show=False)
+    plt.tight_layout()
+    plt.savefig(OUT_DIR / "shap_summary.png")
+    plt.close()
+
+
+def plot_partial_dependence(c):
+    cols = list(c["pdp"])
     fig, axes = plt.subplots(1, len(cols), figsize=(3.2 * len(cols), 3))
-    for ax, c in zip(np.atleast_1d(axes), cols):
-        ax.plot(ctx["pdp"][c]["x"], ctx["pdp"][c]["y"], color=BLUE, marker="o", ms=3)
-        ax.set(title=c.replace("_", " "), ylabel="Avg predicted units")
+    for ax, col in zip(np.atleast_1d(axes), cols):
+        ax.plot(c["pdp"][col]["x"], c["pdp"][col]["y"], color=BLUE, marker="o", ms=3)
+        ax.set(title=col.replace("_", " "), ylabel="Avg predicted units")
     save(fig, "partial_dependence.png")
 
-    # Training curve: error per boosting round on the training data and on the test period
-    ev = ctx["evals"]
+
+def plot_training_curves(c):
+    ev = c["evals"]
     fig, ax = plt.subplots(figsize=(6, 3.6))
     ax.plot(ev["validation_0"]["rmse"], label="Train", color=BLUE)
     ax.plot(ev["validation_1"]["rmse"], label="Test", color=ORANGE)
@@ -359,8 +465,9 @@ def plot_all(ctx):
     ax.legend()
     save(fig, "training_curves.png")
 
-    # Tuning history and which settings mattered
-    study = ctx["study"]
+
+def plot_tuning_history(c):
+    study = c["study"]
     done = [t for t in study.trials if t.value is not None]
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.6))
     axes[0].scatter([t.number for t in done], [t.value for t in done], s=14, color=GREY, label="trial")
@@ -375,10 +482,11 @@ def plot_all(ctx):
         axes[1].axis("off")
     save(fig, "tuning_history.png")
 
-    # Walk-forward: static model vs retrained on all data before each block
-    wf = ctx["walk_forward"]
-    fig, ax = plt.subplots(figsize=(6.5, 3.6))
+
+def plot_walk_forward(c):
+    wf = c["walk_forward"]
     x = np.arange(len(wf))
+    fig, ax = plt.subplots(figsize=(6.5, 3.6))
     ax.bar(x - 0.2, [w["static"]["rmse"] for w in wf], 0.4, label="Trained once (train period)", color=GREY)
     ax.bar(x + 0.2, [w["retrained"]["rmse"] for w in wf], 0.4, label="Retrained before each block", color=BLUE)
     ax.set_xticks(x, [f"{w['from'][:7]}\n→ {w['to'][:7]}" for w in wf])
@@ -388,8 +496,23 @@ def plot_all(ctx):
     save(fig, "walk_forward.png")
 
 
+PLOTS = [plot_default_vs_tuned, plot_predicted_vs_actual, plot_residuals, plot_error_by_segment,
+         plot_feature_importance, plot_shap_summary, plot_partial_dependence, plot_training_curves,
+         plot_tuning_history, plot_walk_forward]
+
+
+def plot_all(ctx):
+    """Draw every figure. A figure that fails is skipped with a message (the numbers are saved anyway)."""
+    for fn in PLOTS:
+        try:
+            fn(ctx)
+        except Exception as err:
+            plt.close("all")
+            print(f"   ({fn.__name__} skipped: {err})")
+
+
 # ─────────────────────────────────────────────
-# 7. MAIN: train, tune, evaluate, explain, save
+# 8. MAIN: train, tune, evaluate, explain, save
 # ─────────────────────────────────────────────
 def train_xgboost(n_trials=N_TRIALS, cv_splits=CV_SPLITS, quick=False):
     t0 = time.time()
@@ -399,15 +522,16 @@ def train_xgboost(n_trials=N_TRIALS, cv_splits=CV_SPLITS, quick=False):
 
     train, test, features = load_data()
     Xtr, ytr, Xte, yte = train[features], train[TARGET], test[features], test[TARGET]
-    groups = feature_groups(features)
+    y_arr, groups = yte.to_numpy(), feature_groups(features)
     print(f"Data: {len(train):,} train rows ({train[DATE_COL].min().date()} to {train[DATE_COL].max().date()}), "
           f"{len(test):,} test rows ({test[DATE_COL].min().date()} to {test[DATE_COL].max().date()}), "
           f"{len(features)} model inputs from {len(groups)} features.")
 
     # 1. Reference points. If XGBoost cannot beat these, it is not adding value.
     print(LINE + "\n1. Reference points")
+    tree = DecisionTreeRegressor(max_depth=6, random_state=SEED).fit(Xtr, ytr)
     ref = {"mean_predictor": metrics(yte, np.full(len(yte), ytr.mean())),
-           "single_decision_tree": metrics(yte, DecisionTreeRegressor(max_depth=6, random_state=SEED).fit(Xtr, ytr).predict(Xte))}
+           "single_decision_tree": metrics(yte, tree.predict(Xte))}
     for k, v in ref.items():
         print(f"   {k:<22} MAE {v['mae']:.3f}  RMSE {v['rmse']:.3f}  R2 {v['r2']:.4f}")
 
@@ -415,9 +539,9 @@ def train_xgboost(n_trials=N_TRIALS, cv_splits=CV_SPLITS, quick=False):
     print(LINE + "\n2. Default XGBoost")
     t = time.time()
     default_cv = cv_scores({}, Xtr, ytr, cv_splits)
-    default = XGBRegressor(**FIXED).fit(Xtr, ytr)
-    default_res = {"train": metrics(ytr, predict(default, Xtr)), "test": metrics(yte, predict(default, Xte)), **default_cv,
-                   "params": {}, "seconds": round(time.time() - t, 1)}
+    default = new_model().fit(Xtr, ytr)
+    default_res = {"train": metrics(ytr, predict(default, Xtr)), "test": metrics(yte, predict(default, Xte)),
+                   **default_cv, "params": {}, "seconds": round(time.time() - t, 1)}
     print(f"   CV RMSE {default_cv['cv_rmse_mean']:.3f} ± {default_cv['cv_rmse_std']:.3f} | "
           f"test MAE {default_res['test']['mae']:.3f}  RMSE {default_res['test']['rmse']:.3f}  R2 {default_res['test']['r2']:.4f}")
 
@@ -433,99 +557,57 @@ def train_xgboost(n_trials=N_TRIALS, cv_splits=CV_SPLITS, quick=False):
     # 4. Final model: fit on the whole training period, score once on the test period.
     print(LINE + "\n4. Final tuned model")
     t = time.time()
-    model = XGBRegressor(**best, **FIXED).fit(Xtr, ytr, eval_set=[(Xtr, ytr), (Xte, yte)], verbose=False)
+    model = new_model(best).fit(Xtr, ytr, eval_set=[(Xtr, ytr), (Xte, yte)], verbose=False)
     evals = model.evals_result()          # only logged for the training-curve plot; NOT used for early stopping or tuning
     pred = predict(model, Xte)
-    tuned_res = {"train": metrics(ytr, predict(model, Xtr)), "test": metrics(yte, pred), **tuned_cv, "best_params": best,
-                 "seconds": round(time.time() - t + tune_seconds, 1)}
+    tuned_res = {"train": metrics(ytr, predict(model, Xtr)), "test": metrics(yte, pred), **tuned_cv,
+                 "best_params": best, "seconds": round(time.time() - t + tune_seconds, 1)}
     tt, dt = tuned_res["test"], default_res["test"]
     print(f"   CV RMSE {tuned_cv['cv_rmse_mean']:.3f} ± {tuned_cv['cv_rmse_std']:.3f} | "
           f"test MAE {tt['mae']:.3f}  MSE {tt['mse']:.2f}  RMSE {tt['rmse']:.3f}  R2 {tt['r2']:.4f}  WAPE {tt['wape']:.1%}")
     print(f"   vs default: RMSE {dt['rmse']:.3f} -> {tt['rmse']:.3f} ({(tt['rmse'] / dt['rmse'] - 1):+.1%}), "
           f"R2 {dt['r2']:.4f} -> {tt['r2']:.4f}")
-    y_arr = yte.to_numpy()
+    ensemble = ensemble_of_best_trials(study, Xtr, ytr, Xte, yte)
+    et = ensemble["test"]
+    print(f"   Ensemble of the best {ensemble['members']} settings: RMSE {et['rmse']:.3f}  R2 {et['r2']:.4f} "
+          f"(single tuned model RMSE {tt['rmse']:.3f})")
 
-    # 5. Feature importance, three ways (they should agree; if not, be careful with the story)
+    # 5. Feature importance (three ways) and business view
     print(LINE + "\n5. Feature importance")
-    gain = model.get_booster().get_score(importance_type="gain")
-    gain = pd.Series({c: gain.get(c, 0.0) for c in features})
-    sample = Xte.sample(min(SHAP_ROWS, len(Xte)), random_state=SEED)
-    sv = shap_values(model, sample)
-    shap_col = pd.Series(np.abs(sv).mean(axis=0), index=features)
-    perm = grouped_permutation(model, Xte, yte, groups)
-    importance = pd.DataFrame({
-        "gain": {g: gain[c].sum() / gain.sum() for g, c in groups.items()},
-        "permutation_rmse_increase": {g: perm[g][0] for g in groups},
-        "permutation_std": {g: perm[g][1] for g in groups},
-        "shap_mean_abs": {g: shap_col[c].sum() for g, c in groups.items()},
-    }).sort_values("permutation_rmse_increase", ascending=False)
-    importance.index.name = "feature"
+    importance, by_column, sample, sv = importance_table(model, Xte, yte, features, groups)
     importance.to_csv(OUT_DIR / "feature_importance.csv")
-    pd.DataFrame({"gain": gain, "shap_mean_abs": shap_col}).sort_values("shap_mean_abs", ascending=False) \
-        .to_csv(OUT_DIR / "feature_importance_by_column.csv", index_label="column")
+    by_column.to_csv(OUT_DIR / "feature_importance_by_column.csv", index_label="column")
     print(importance.round(4).to_string())
-
-    # Business view: what does a promotion / holiday add on average, and how do the numeric inputs act?
-    effects, pdp, sc = {}, {}, scaler_info()
-    for flag in FLAG_COLS:
-        on, off = Xte.copy(), Xte.copy()
-        on[flag], off[flag] = 1, 0
-        effects[flag] = float(predict(model, on).mean() - predict(model, off).mean())
+    effects, pdp = business_effects(model, Xte, sample)
     print("   Average effect on predicted units sold: " + ", ".join(f"{k} {v:+.1f}" for k, v in effects.items()))
-    for c in PDP_COLS:
-        grid = np.quantile(sample[c], np.linspace(0.02, 0.98, 15))
-        mean, scale = sc.get(c, (0.0, 1.0))
-        pdp[c] = {"x": grid * scale + mean, "y": effect_curve(model, sample, c, grid)}
 
     # 6. Error analysis
     print(LINE + "\n6. Error analysis")
     seg = segment_table(test, y_arr, pred)
     seg.to_csv(OUT_DIR / "segment_errors.csv", index=False)
-    err = pred - y_arr
-    preds = test[[DATE_COL] + STOCK_COLS].copy()
-    preds[DATE_COL] = preds[DATE_COL].dt.date
-    for c in SEGMENT_CATS:
-        preds[c] = decode(test, c)
-    preds = preds.assign(**{TARGET: y_arr, "pred_default": predict(default, Xte), "pred_tuned": pred,
-                            "error": err, "abs_error": np.abs(err)})
-    preds.to_csv(OUT_DIR / "predictions.csv", index=False)
-    preds.sort_values("abs_error", ascending=False).head(50).to_csv(OUT_DIR / "worst_predictions.csv", index=False)
-    top_band = seg[(seg["segment"] == "Actual demand band")].set_index("group")
-    error_analysis = {
-        "share_under_predicted": float((err < 0).mean()),
-        "within_5_units": float((np.abs(err) <= 5).mean()),
-        "within_20_percent": float((np.abs(err) <= 0.2 * y_arr).mean()),
-        "bias_lowest_demand_quarter": float(top_band.loc["Q1 lowest", "bias"]),
-        "bias_highest_demand_quarter": float(top_band.loc["Q4 highest", "bias"]),
-        "hardest_category": seg[seg["segment"] == "Product_Category"].sort_values("mae").iloc[-1]["group"],
-        "easiest_category": seg[seg["segment"] == "Product_Category"].sort_values("mae").iloc[0]["group"],
-    }
-    print(f"   {error_analysis['share_under_predicted']:.0%} of rows under-predicted | "
-          f"within 5 units: {error_analysis['within_5_units']:.0%} | "
-          f"bias on the lowest / highest demand quarter: {error_analysis['bias_lowest_demand_quarter']:+.1f} / "
-          f"{error_analysis['bias_highest_demand_quarter']:+.1f} units")
-    print(f"   Hardest category (MAE): {error_analysis['hardest_category']}, easiest: {error_analysis['easiest_category']}")
+    save_predictions(test, y_arr, predict(default, Xte), pred)
+    error_analysis = error_summary(seg, y_arr, pred)
+    ea = error_analysis
+    print(f"   {ea['share_under_predicted']:.0%} of rows under-predicted | within 5 units: {ea['within_5_units']:.0%} | "
+          f"bias on the lowest / highest demand quarter: {ea['bias_lowest_demand_quarter']:+.1f} / "
+          f"{ea['bias_highest_demand_quarter']:+.1f} units")
+    print(f"   Hardest category (MAE): {ea['hardest_category']}, easiest: {ea['easiest_category']}")
 
     # 7. Robustness
     print(LINE + "\n7. Robustness")
-    seeds = [metrics(yte, predict(XGBRegressor(**{**FIXED, "random_state": s}, **best).fit(Xtr, ytr), Xte)) for s in range(5)]
-    seeds = pd.DataFrame(seeds)
-    seed_stability = {f"{k}_{s}": float(getattr(seeds[k], s)()) for k in ("mae", "rmse", "r2") for s in ("mean", "std")}
-    print(f"   5 random seeds: RMSE {seed_stability['rmse_mean']:.3f} ± {seed_stability['rmse_std']:.3f}, "
-          f"R2 {seed_stability['r2_mean']:.4f} ± {seed_stability['r2_std']:.4f}")
-    wf = walk_forward(best, train, test, features)
+    stability = seed_stability(best, Xtr, ytr, Xte, yte)
+    print(f"   5 random seeds: RMSE {stability['rmse_mean']:.3f} ± {stability['rmse_std']:.3f}, "
+          f"R2 {stability['r2_mean']:.4f} ± {stability['r2_std']:.4f}")
+    wf = walk_forward(best, train, test, features, pred)
     for w in wf:
-        w["static"] = metrics(y_arr[w["mask"]], pred[w["mask"]])
         print(f"   {w['from']} → {w['to']}: static RMSE {w['static']['rmse']:.3f} | retrained RMSE {w['retrained']['rmse']:.3f}")
-    wf_json = [{k: v for k, v in w.items() if k != "mask"} for w in wf]
 
-    # 8. Save everything
+    # 8. Save everything (file names are read by xgboost_results.py, so keep them as they are)
     print(LINE + "\n8. Saving")
     plot_all({"y": y_arr, "pred": pred, "test": test, "default_test": dt, "tuned_test": tt, "segments": seg,
               "importance": importance, "shap": sv, "X_shap": sample, "pdp": pdp, "evals": evals, "study": study,
               "walk_forward": wf})
-    trials = study.trials_dataframe()
-    trials.to_csv(OUT_DIR / "tuning_trials.csv", index=False)
+    study.trials_dataframe().to_csv(OUT_DIR / "tuning_trials.csv", index=False)
     joblib.dump(model, OUT_DIR / "model.joblib", compress=3)
     joblib.dump(default, OUT_DIR / "model_default.joblib", compress=3)
     (OUT_DIR / "best_params.json").write_text(json.dumps(best, indent=2))
@@ -537,10 +619,10 @@ def train_xgboost(n_trials=N_TRIALS, cv_splits=CV_SPLITS, quick=False):
         "validation": f"TimeSeriesSplit, {cv_splits} folds on the training period",
         "tuning": {"method": "Optuna TPE + median pruner", "n_trials": n_trials,
                    "n_pruned": int(sum(t.state.name == "PRUNED" for t in study.trials)), "best_cv_rmse": study.best_value},
-        "reference": ref, "default": default_res, "tuned": tuned_res,
+        "reference": ref, "default": default_res, "tuned": tuned_res, "ensemble": ensemble,
         "feature_importance": importance.round(6).reset_index().to_dict("records"),
         "effect_on_units": effects, "error_analysis": error_analysis,
-        "robustness": {"seed_stability": seed_stability, "walk_forward": wf_json},
+        "robustness": {"seed_stability": stability, "walk_forward": wf},
         "run": {"seed": SEED, "seconds": round(time.time() - t0, 1), "xgboost": xgb.__version__,
                 "python": platform.python_version(), "finished": time.strftime("%Y-%m-%d %H:%M")},
     }

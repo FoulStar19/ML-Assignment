@@ -17,11 +17,11 @@ def train_models():
     print(LINE + "\n")
 
 
-    # # 2. Random Forest
-    # print(LINE)
-    # print("2. Random Forest")
-    # train_random_forest()
-    # print(LINE + "\n")
+    # 2. Random Forest
+    print(LINE)
+    print("2. Random Forest")
+    train_random_forest()
+    print(LINE + "\n")
 
     # 3. XGBoost
     print(LINE)
@@ -29,11 +29,11 @@ def train_models():
     train_xgboost()
     print(LINE + "\n")
 
-    # # 4. MLP
-    # print(LINE)
-    # print("4. MLP")
-    # train_mlp()
-    # print(LINE + "\n")
+    # 4. MLP
+    print(LINE)
+    print("4. MLP")
+    train_mlp()
+    print(LINE + "\n")
 
     # # 5. XGBoost for recommender system (predicting Units_Sold)
     # print(LINE)

@@ -1,28 +1,52 @@
-,importance
-price,0.14258880976151087
-marketing_spend,0.09759052038351941
-customer_footfall,0.0375314336616942
-promotion,0.03266722467604173
-holiday,0.03254184737376997
-price_gap,0.017336637115054197
-inventory_per_visitor,0.015547593005750504
-inventory_level,0.007311693321652668
-price_ratio,0.0071426093629209705
-competitor_pricing,0.004454803031567178
-weather_condition,0.0034363322264475693
-category,0.002218200787668234
-region,0.0015798420549600456
-weekday,0.0008339826213612511
-day,0.0007032408996946904
-shipping_time,0.00031127836370288265
-product_subcategory,0.00015777387386426423
-is_weekend,-2.8205001831627106e-05
-supplier_rating,-0.00014745691525519522
-month,-0.0001856324666143161
-week,-0.00020597738943832765
-brand,-0.00045000519852114176
-online_orders,-0.000499741635170392
-store_type,-0.000626335576852255
-seasonality,-0.0012695686203627154
-economic_index,-0.002679155064813066
-discount,-0.003399218517163671
+,0
+Unit_Price,3.0072623952750432
+Marketing_Spend,1.3594554977550808
+Customer_Footfall,0.9725511362492538
+Holiday,0.41620845053598376
+Promotion,0.19371807194553856
+Month,0.050119303769990256
+Weather_Condition_Sunny,0.049314438952986
+Discount_Percent,0.02447764417716023
+Weather_Condition_Stormy,0.015131484494922099
+Product_Category_Clothing,0.011202065523080585
+Weather_Condition_Rainy,0.010320569475462626
+Product_Subcategory_Dairy,0.004042865485400249
+Weather_Condition_Snowy,0.0026797769178367402
+Product_Subcategory_Fragrance,0.0017628166793775435
+Product_Subcategory_Team Sports,0.0016489785060770147
+Product_Subcategory_Laptop,0.0016302317857352477
+Product_Category_Home & Kitchen,0.001629957474395738
+Product_Category_Electronics,0.0014116229582498362
+Product_Subcategory_Snacks,0.0010337218848986752
+Product_Subcategory_Mobile,0.0009632896122891311
+Product_Subcategory_Fitness,0.0009426907959836584
+Product_Category_Groceries,0.0009216614872046946
+Store_Type_Hypermarket,0.0008153109796234404
+Product_Subcategory_Men,0.0005990071584974999
+Product_Category_Beauty,0.0005143403808496316
+Product_Subcategory_Footwear,0.0004942693982389557
+Product_Subcategory_Educational,0.00043260119918944186
+Product_Subcategory_Puzzles,0.0002599336535014984
+Store_Type_Convenience Store,0.00019569470265992094
+Product_Subcategory_Kids,0.0001475311052313799
+Product_Subcategory_Accessories,0.00012394831100337456
+Product_Subcategory_Decor,5.977826739460568e-05
+Product_Subcategory_Beverages,2.106028937056692e-05
+Product_Subcategory_Sportswear,-0.0003919873238281468
+Store_Type_Online Store,-0.0005205595421648113
+Product_Subcategory_Haircare,-0.0006281020466047949
+Product_Subcategory_Makeup,-0.0006564737751999061
+Product_Subcategory_Furniture,-0.0008340449641899284
+Product_Subcategory_Cookware,-0.0009956611535502091
+Product_Category_Sports,-0.001138291261717761
+Product_Subcategory_Storage,-0.0011670728155104726
+Product_Subcategory_Outdoor,-0.0012530483842613904
+Product_Subcategory_Action Figures,-0.0017390875975141994
+Product_Subcategory_Board Games,-0.0017802169415743307
+Product_Category_Toys,-0.0017869872377477946
+Weather_Condition_Cloudy,-0.001997765111461369
+Product_Subcategory_Audio,-0.002238783522533794
+Product_Subcategory_Fresh Produce,-0.0027288732139268746
+Product_Subcategory_Skincare,-0.0031366239477385706
+Product_Subcategory_Women,-0.0032222869470452053
+Store_Type_Supermarket,-0.005277392960661586

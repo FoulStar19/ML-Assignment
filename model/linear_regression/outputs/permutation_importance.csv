@@ -1,0 +1,52 @@
+,rmse_increase
+Unit_Price,1.8075495877056618
+Customer_Footfall,1.4003819636090626
+Marketing_Spend,1.253147583071701
+Holiday,0.9102951229630687
+Product_Category_Groceries,0.83976215922917
+Promotion,0.4361754379562736
+Weather_Condition_Sunny,0.21115840894474366
+Product_Category_Home & Kitchen,0.08465716921046251
+Product_Category_Sports,0.04214849656967701
+Product_Category_Electronics,0.038490704487906056
+Weather_Condition_Cloudy,0.036745056931038536
+Weather_Condition_Stormy,0.03147217447815152
+Product_Category_Beauty,0.031292728139759876
+Product_Subcategory_Dairy,0.01681311364191416
+Discount_Percent,0.009335732475089387
+Product_Subcategory_Snacks,0.008955401332350376
+Product_Category_Clothing,0.008286881288519865
+Weather_Condition_Snowy,0.008090757583124742
+Month,0.007167512377514384
+Product_Subcategory_Beverages,0.003963905305393922
+Product_Subcategory_Fresh Produce,0.003358019552348779
+Product_Subcategory_Storage,0.002461132819791345
+Product_Subcategory_Cookware,0.002230021984874142
+Product_Subcategory_Furniture,0.0009243986146092453
+Product_Subcategory_Skincare,0.00037668952573532977
+Product_Subcategory_Haircare,0.0003722979765960588
+Product_Subcategory_Outdoor,0.00036799090522485753
+Product_Subcategory_Footwear,8.746279602220853e-05
+Product_Subcategory_Team Sports,6.0993368594353116e-05
+Store_Type_Hypermarket,5.936976424081308e-05
+Product_Subcategory_Sportswear,0.0
+Product_Subcategory_Action Figures,0.0
+Weather_Condition_Rainy,0.0
+Store_Type_Supermarket,0.0
+Product_Subcategory_Women,0.0
+Product_Subcategory_Accessories,0.0
+Product_Subcategory_Decor,0.0
+Product_Subcategory_Puzzles,0.0
+Product_Subcategory_Men,0.0
+Product_Subcategory_Laptop,0.0
+Product_Subcategory_Kids,0.0
+Product_Subcategory_Educational,-6.8711683924505e-05
+Store_Type_Convenience Store,-0.00021211270052639007
+Product_Subcategory_Mobile,-0.0002166387884862786
+Product_Subcategory_Audio,-0.00030784339478522326
+Product_Subcategory_Makeup,-0.0003163970177201492
+Store_Type_Online Store,-0.000411457154895345
+Product_Subcategory_Fitness,-0.000512058025954687
+Product_Category_Toys,-0.0009087287480394224
+Product_Subcategory_Fragrance,-0.0010068535527029353
+Product_Subcategory_Board Games,-0.001232503525481121

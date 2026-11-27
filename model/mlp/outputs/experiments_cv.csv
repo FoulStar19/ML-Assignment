@@ -1,0 +1,6 @@
+variant,cv_RMSE,cv_RMSE_std,cv_MAE,cv_R2
+Linear regression (reference),11.8914,0.5944,9.0121,0.4183
+"V0 sklearn defaults (100,), raw target",11.9156,0.7908,9.0379,0.4149
+"V1 (64,32) + standardised target",11.7107,0.5895,8.8818,0.4356
+"V2 (64,32) + log + standardised target",12.0685,0.6766,8.9459,0.3997
+"V3 (128,64) + standardised target",11.6657,0.5646,8.8452,0.4398

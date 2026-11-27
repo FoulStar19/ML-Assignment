@@ -40,7 +40,7 @@ ROOT_DIR = (Path(os.environ["PROJECT_ROOT"]) if "PROJECT_ROOT" in os.environ
             else Path(__file__).resolve().parents[2])
 TRAIN_FILE = ROOT_DIR / "data" / "processed" / "train.csv"
 TEST_FILE = ROOT_DIR / "data" / "processed" / "test.csv"
-MODEL_FILE = ROOT_DIR / "models" / "linear_regression_model.joblib"
+MODEL_FILE = Path(__file__).resolve().parent / "linear_regression_model.joblib"
 
 REPORT_DIR = Path(__file__).resolve().parent / "outputs"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)

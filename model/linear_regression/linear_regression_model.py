@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import warnings
 from pathlib import Path
 
@@ -40,15 +41,20 @@ ROOT_DIR = (Path(os.environ["PROJECT_ROOT"]) if "PROJECT_ROOT" in os.environ
             else Path(__file__).resolve().parents[2])
 TRAIN_FILE = ROOT_DIR / "data" / "processed" / "train.csv"
 TEST_FILE = ROOT_DIR / "data" / "processed" / "test.csv"
-MODEL_FILE = ROOT_DIR / "models" / "linear_regression_model.joblib"
+MODEL_FILE = Path(__file__).resolve().parent / "linear_regression_model.joblib"
 
 REPORT_DIR = Path(__file__).resolve().parent / "outputs"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 TARGET = "Units_Sold"
+
+# Column lists come from the data-preparation code, so they are defined in one place only.
+if str(ROOT_DIR / "src" / "backend") not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR / "src" / "backend"))
+from data_modeling import NON_FEATURE_COLS   # noqa: E402  (target, date, ID and stock columns)
 # Not model inputs: the label, bookkeeping columns, and Inventory_Level (kept for the recommender;
 # it is strongly tied to sales, so excluding it keeps this a pure "demand drivers" model).
-NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]
+NON_FEATURES = NON_FEATURE_COLS   # Units_Sold, Date, Transaction_ID, Store_ID, Product_ID, Inventory_Level
 
 N_SPLITS = 5            # time-ordered CV folds
 N_ITER_SEARCH = 40      # random-search budget (cheaper than a full grid, Part B.1)

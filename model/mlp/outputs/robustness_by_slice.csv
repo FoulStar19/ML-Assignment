@@ -1,0 +1,20 @@
+slice,value,rows,MAE,RMSE,R2,Bias,linear_MAE,MAE_gain_vs_linear
+Product_Category,Beauty,759,8.083,10.34,0.467,-0.192,8.296,0.213
+Product_Category,Clothing,1284,7.934,10.422,0.495,0.062,8.088,0.154
+Product_Category,Electronics,1197,6.173,7.877,0.43,0.258,6.568,0.396
+Product_Category,Groceries,2029,10.908,14.421,0.469,-0.885,11.216,0.308
+Product_Category,Home & Kitchen,1073,6.875,8.801,0.395,0.106,7.146,0.272
+Product_Category,Sports,575,7.083,9.394,0.498,-0.577,7.469,0.386
+Product_Category,Toys,596,8.368,10.523,0.422,0.555,8.302,-0.066
+Store_Type,Convenience Store,1663,8.158,10.721,0.518,-0.119,8.357,0.199
+Store_Type,Hypermarket,1846,9.104,12.311,0.552,-0.385,9.381,0.278
+Store_Type,Online Store,1159,7.055,9.305,0.499,0.144,7.376,0.321
+Store_Type,Supermarket,2845,8.341,11.019,0.541,-0.246,8.593,0.252
+Weather_Condition,Cloudy,1861,8.378,10.934,0.537,-0.178,8.664,0.286
+Weather_Condition,Rainy,1481,7.977,10.391,0.548,-0.061,8.214,0.237
+Weather_Condition,Snowy,596,7.414,9.904,0.538,-0.391,7.758,0.344
+Weather_Condition,Stormy,381,7.131,9.107,0.552,-0.317,7.278,0.147
+Weather_Condition,Sunny,3194,8.685,11.793,0.545,-0.209,8.932,0.247
+Time period,T1: 2025-10-20 to 2026-03-14,2505,8.621,11.564,0.56,-0.392,8.931,0.31
+Time period,T2: 2026-03-14 to 2026-08-08,2504,7.629,10.052,0.515,-0.018,7.826,0.197
+Time period,T3: 2026-08-08 to 2026-12-31,2504,8.618,11.458,0.55,-0.165,8.883,0.265

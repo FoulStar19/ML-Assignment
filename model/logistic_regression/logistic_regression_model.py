@@ -1,97 +1,49 @@
 import os
-from pathlib import Path
 
 import joblib
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, auc, roc_auc_score
+from sklearn.metrics import f1_score
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
-LINE = "─" * 45
+from model.evaluation import evaluate_model
 
-# ─────────────────────────────────────────────
-# 0. SETTINGS
-# ─────────────────────────────────────────────
-SEED = 42
-ROOT_DIR = Path(__file__).resolve().parents[4] # src/backend/model/logistic_regression/<this file>
-TRAIN_FILE = ROOT_DIR / "data" / "processed" / "train.csv"
-TEST_FILE = ROOT_DIR / "data" / "processed" / "test.csv"
-MODEL_FILE = ROOT_DIR / "models" / "logistic_regression_model.joblib"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(HERE))                  # model/<name>/ -> repo root
+TRAIN_FILE = os.path.join(ROOT_DIR, "data", "processed", "train.csv")
+TEST_FILE = os.path.join(ROOT_DIR, "data", "processed", "test.csv")
+MODEL_FILE = os.path.join(HERE, "logistic_regression.joblib")
 
 TARGET = "Units_Sold"
-NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]   # labels / recommender columns
-CLASSES = ["Low", "Medium", "High"] # demand level: bottom / middle / top third of Units_Sold
+NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]   # not model inputs
+RANDOM_STATE = 42
 
 
-# ─────────────────────────────────────────────
-# 1. HELPERS
-# ─────────────────────────────────────────────
-def load_split(path):
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"{path} not found - run pipeline.py first")
-    df = pd.read_csv(path)
-    return df.drop(columns=NON_FEATURES), df[TARGET]
-
-
-def demand_cutoffs(units_train):
-    # Cut points come from the training data only, so the test set does not influence the labels
-    return units_train.quantile([1 / 3, 2 / 3]).tolist()
-
-
-def to_demand_level(units, cutoffs):
-    return pd.cut(units, bins=[-float("inf"), cutoffs[0], cutoffs[1], float("inf")], labels=CLASSES).astype(str)
-
-
-# ─────────────────────────────────────────────
-# 2. LOGISTIC REGRESSION BASELINE
-# ─────────────────────────────────────────────
 def train_logistic_regression():
+    train = pd.read_csv(TRAIN_FILE)
+    test = pd.read_csv(TEST_FILE)
+    X_train = train.drop(columns=NON_FEATURES)
+    X_test = test.drop(columns=NON_FEATURES)
 
-    # 1. Load the prepared data (already encoded and scaled by data_modeling)
-    print(LINE)
-    print("1. Data")
-    X_train, units_train = load_split(TRAIN_FILE)
-    X_test, units_test = load_split(TEST_FILE)
-    cutoffs = demand_cutoffs(units_train)
-    y_train = to_demand_level(units_train, cutoffs)
-    y_test = to_demand_level(units_test, cutoffs)
-    print(f"Train : {len(X_train):,} rows | Test : {len(X_test):,} rows | Inputs : {X_train.shape[1]}")
-    print(f"Demand level from {TARGET}: Low <= {cutoffs[0]:.0f}, Medium <= {cutoffs[1]:.0f}, High above")
-    print("Train classes:", y_train.value_counts(normalize=True).round(3).reindex(CLASSES).to_dict())
-    print(LINE + "\n")
+    # High demand = Units_Sold above the TRAIN median (threshold taken from train only)
+    threshold = train[TARGET].median()
+    y_train = (train[TARGET] > threshold).astype(int)
+    y_test = (test[TARGET] > threshold).astype(int)
 
-    # 2. Train (plain defaults - this is the baseline the other models have to beat)
-    print(LINE)
-    print("2. Training")
-    model = LogisticRegression(max_iter=1000, random_state=SEED)
-    model.fit(X_train, y_train)
-    print("LogisticRegression(max_iter=1000) fitted.")
-    print(LINE + "\n")
+    # Tune with time-ordered folds (train.csv is sorted by date, so no look-ahead)
+    model = LogisticRegression(max_iter=2000, random_state=RANDOM_STATE)
+    grid = {"C": [0.01, 0.1, 1, 10]}
+    search = GridSearchCV(model, grid, cv=TimeSeriesSplit(n_splits=3), scoring="f1", n_jobs=-1)
+    search.fit(X_train, y_train)
+    best = search.best_estimator_
+    print(f"Best parameters : {search.best_params_}")
+    print(f"Best CV F1      : {search.best_score_:.4f}")
 
-    # 3. Evaluate on the held-out (latest) dates
-    print(LINE)
-    print("3. Evaluation (test set)")
-    y_pred = model.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred, average="macro")
-    majority = y_test.value_counts(normalize=True).max()
-    print(f"Accuracy : {acc:.3f}  (always guessing the biggest class: {majority:.3f})")
-    print(f"Macro F1 : {f1:.3f}")
-    print("\nConfusion matrix (rows = actual, columns = predicted):")
-    print(pd.DataFrame(confusion_matrix(y_test, y_pred, labels=CLASSES),
-                       index=CLASSES, columns=CLASSES).to_string())
-    print("\n" + classification_report(y_test, y_pred, labels=CLASSES, digits=3))
-    print(LINE + "\n")
+    # Evaluate on the held-out (most recent) dates
+    y_pred = best.predict(X_test)
+    evaluate_model(y_test, y_pred, "Logistic Regression")
+    print(f"Test F1         : {f1_score(y_test, y_pred):.4f}")
 
-    # 4. Save
-    print(LINE)
-    print("4. Saving")
-    MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"model": model, "cutoffs": cutoffs, "classes": CLASSES}, MODEL_FILE)
-    print(f"Model saved : {MODEL_FILE}")
-    print(LINE + "\n")
-
-    return model
-
-
-if __name__ == "__main__":
-    train_logistic_regression()
+    joblib.dump(best, MODEL_FILE)
+    print(f"Saved model     : {MODEL_FILE}")
+    return best

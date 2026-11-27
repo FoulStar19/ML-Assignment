@@ -1,61 +1,53 @@
-import sys
-from pathlib import Path
+import os
 
-MODEL_DIR = Path(__file__).resolve().parents[1]                    # model/  (evaluation.py)
-sys.path.insert(0, str(MODEL_DIR))
-sys.path.insert(0, str(MODEL_DIR.parent / "src" / "backend"))       # data pipeline + data_modeling.py
-
+import joblib
 import pandas as pd
-from scipy.stats import randint
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.pipeline import Pipeline
+from sklearn.metrics import f1_score
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
-from data_modeling import RANDOM_STATE, build_preprocessor, prepare_data
-from evaluation import (parse_args, plot_bar, run_model_experiment,
-                        save_permutation_importance)
+from model.evaluation import evaluate_model
 
-MODEL_NAME = "Random Forest"
-OUT_DIR = Path(__file__).resolve().parent / "outputs"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(HERE))                  # model/<name>/ -> repo root
+TRAIN_FILE = os.path.join(ROOT_DIR, "data", "processed", "train.csv")
+TEST_FILE = os.path.join(ROOT_DIR, "data", "processed", "test.csv")
+MODEL_FILE = os.path.join(HERE, "random_forest.joblib")
 
-
-def build_pipeline(ds) -> Pipeline:
-    """Trees are scale-invariant, so no StandardScaler.
-    n_jobs=1 inside the model because the search already runs candidates in parallel."""
-    return Pipeline([
-        ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=False)),
-        ("clf", RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=1)),
-    ])
+TARGET = "Units_Sold"
+NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]   # not model inputs
+RANDOM_STATE = 42
 
 
-# Part B tuning. Depth / leaf size control over-fitting; max_features controls how
-# decorrelated the trees are; balanced class weights help the minority classes.
-SEARCH_SPACE = {
-    "clf__n_estimators": randint(100, 500),
-    "clf__max_depth": [None, 8, 12, 16, 24],
-    "clf__min_samples_split": randint(2, 20),
-    "clf__min_samples_leaf": randint(1, 10),
-    "clf__max_features": ["sqrt", "log2", 0.5],
-    "clf__class_weight": [None, "balanced", "balanced_subsample"],
-}
+def train_random_forest():
+    train = pd.read_csv(TRAIN_FILE)
+    test = pd.read_csv(TEST_FILE)
+    X_train = train.drop(columns=NON_FEATURES)
+    X_test = test.drop(columns=NON_FEATURES)
 
+    # High demand = Units_Sold above the TRAIN median (threshold taken from train only)
+    threshold = train[TARGET].median()
+    y_train = (train[TARGET] > threshold).astype(int)
+    y_test = (test[TARGET] > threshold).astype(int)
 
-def explain(model, ds, out_dir):
-    """Two views of importance: impurity-based (internal) and permutation-based (on test data)."""
-    names = model.named_steps["prep"].get_feature_names_out()
-    imp = pd.Series(model.named_steps["clf"].feature_importances_, index=names)
-    imp = imp.sort_values(ascending=False)
-    imp.to_csv(Path(out_dir) / "impurity_importance.csv", header=["importance"])
-    plot_bar(imp.head(15), "Random Forest - impurity importance (top 15)",
-             Path(out_dir) / "impurity_importance.png", "importance")
-    save_permutation_importance(model, ds, out_dir)
+    # Tune with time-ordered folds (train.csv is sorted by date, so no look-ahead)
+    model = RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1)
+    grid = {
+        "n_estimators": [100, 300],
+        "max_depth": [8, 16, None],
+        "min_samples_leaf": [1, 5],
+    }
+    search = GridSearchCV(model, grid, cv=TimeSeriesSplit(n_splits=3), scoring="f1", n_jobs=-1)
+    search.fit(X_train, y_train)
+    best = search.best_estimator_
+    print(f"Best parameters : {search.best_params_}")
+    print(f"Best CV F1      : {search.best_score_:.4f}")
 
+    # Evaluate on the held-out (most recent) dates
+    y_pred = best.predict(X_test)
+    evaluate_model(y_test, y_pred, "Random Forest")
+    print(f"Test F1         : {f1_score(y_test, y_pred):.4f}")
 
-def run(dataset, n_iter=20, cv_splits=3):
-    """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
-    return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
-                                n_iter=n_iter, cv_splits=cv_splits, explain=explain)
-
-
-if __name__ == "__main__":
-    args = parse_args("Train and evaluate the Random Forest model")
-    run(prepare_data(args.data), n_iter=args.n_iter, cv_splits=args.cv_splits)
+    joblib.dump(best, MODEL_FILE)
+    print(f"Saved model     : {MODEL_FILE}")
+    return best

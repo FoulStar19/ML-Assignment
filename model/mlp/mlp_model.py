@@ -1,64 +1,53 @@
-import sys
-from pathlib import Path
+import os
 
-MODEL_DIR = Path(__file__).resolve().parents[1]                    # model/  (evaluation.py)
-sys.path.insert(0, str(MODEL_DIR))
-sys.path.insert(0, str(MODEL_DIR.parent / "src" / "backend"))       # data pipeline + data_modeling.py
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from scipy.stats import loguniform
+import joblib
+import pandas as pd
 from sklearn.neural_network import MLPClassifier
-from sklearn.pipeline import Pipeline
+from sklearn.metrics import f1_score
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
-from data_modeling import RANDOM_STATE, build_preprocessor, prepare_data
-from evaluation import parse_args, run_model_experiment, save_permutation_importance
+from model.evaluation import evaluate_model
 
-MODEL_NAME = "MLP Neural Network"
-OUT_DIR = Path(__file__).resolve().parent / "outputs"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(HERE))                  # model/<name>/ -> repo root
+TRAIN_FILE = os.path.join(ROOT_DIR, "data", "processed", "train.csv")
+TEST_FILE = os.path.join(ROOT_DIR, "data", "processed", "test.csv")
+MODEL_FILE = os.path.join(HERE, "mlp.joblib")
 
-
-def build_pipeline(ds) -> Pipeline:
-    """Neural networks need scaled inputs, so scale=True."""
-    return Pipeline([
-        ("prep", build_preprocessor(ds.numeric_features, ds.categorical_features, scale=True)),
-        ("clf", MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=300, early_stopping=True,
-                              n_iter_no_change=10, random_state=RANDOM_STATE)),
-    ])
+TARGET = "Units_Sold"
+NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]   # not model inputs
+RANDOM_STATE = 42
 
 
-# Part B tuning. alpha = L2 penalty (regularisation); architecture and learning rate
-# control capacity and training stability.
-SEARCH_SPACE = {
-    "clf__hidden_layer_sizes": [(64,), (128,), (64, 32), (128, 64), (128, 64, 32)],
-    "clf__activation": ["relu", "tanh"],
-    "clf__alpha": loguniform(1e-5, 1e-1),
-    "clf__learning_rate_init": loguniform(1e-4, 1e-2),
-    "clf__batch_size": [64, 128, 256],
-}
+def train_mlp():
+    train = pd.read_csv(TRAIN_FILE)
+    test = pd.read_csv(TEST_FILE)
+    X_train = train.drop(columns=NON_FEATURES)
+    X_test = test.drop(columns=NON_FEATURES)
 
+    # High demand = Units_Sold above the TRAIN median (threshold taken from train only)
+    threshold = train[TARGET].median()
+    y_train = (train[TARGET] > threshold).astype(int)
+    y_test = (test[TARGET] > threshold).astype(int)
 
-def explain(model, ds, out_dir):
-    """Training curves (to check convergence / over-fitting) + permutation importance."""
-    clf = model.named_steps["clf"]
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    axes[0].plot(clf.loss_curve_)
-    axes[0].set(title="Training loss", xlabel="epoch", ylabel="log-loss")
-    axes[1].plot(clf.validation_scores_)
-    axes[1].set(title="Validation accuracy (early stopping)", xlabel="epoch", ylabel="accuracy")
-    fig.tight_layout()
-    fig.savefig(Path(out_dir) / "training_curves.png", dpi=150)
-    plt.close(fig)
-    save_permutation_importance(model, ds, out_dir)
+    # Tune with time-ordered folds (train.csv is sorted by date, so no look-ahead)
+    model = MLPClassifier(max_iter=500, early_stopping=True, random_state=RANDOM_STATE)
+    grid = {
+        "hidden_layer_sizes": [(64,), (64, 32)],
+        "alpha": [0.0001, 0.001],
+        "learning_rate_init": [0.001, 0.01],
+    }
+    search = GridSearchCV(model, grid, cv=TimeSeriesSplit(n_splits=3), scoring="f1", n_jobs=-1)
+    search.fit(X_train, y_train)
+    best = search.best_estimator_
+    print(f"Best parameters : {search.best_params_}")
+    print(f"Best CV F1      : {search.best_score_:.4f}")
 
+    # Evaluate on the held-out (most recent) dates
+    y_pred = best.predict(X_test)
+    evaluate_model(y_test, y_pred, "MLP")
+    print(f"Test F1         : {f1_score(y_test, y_pred):.4f}")
 
-def run(dataset, n_iter=20, cv_splits=3):
-    """Tune + evaluate this model on an already prepared dataset (also called by pipeline.py)."""
-    return run_model_experiment(MODEL_NAME, build_pipeline(dataset), SEARCH_SPACE, dataset, OUT_DIR,
-                                n_iter=n_iter, cv_splits=cv_splits, explain=explain)
-
-
-if __name__ == "__main__":
-    args = parse_args("Train and evaluate the MLP neural network")
-    run(prepare_data(args.data), n_iter=args.n_iter, cv_splits=args.cv_splits)
+    joblib.dump(best, MODEL_FILE)
+    print(f"Saved model     : {MODEL_FILE}")
+    return best

@@ -1,89 +1,367 @@
 {
   "model": "XGBoost",
-  "n_iter": 20,
-  "cv_splits": 3,
-  "n_train": 17471,
-  "n_test": 7529,
-  "split": "Train : 2023-01-01 \u2192 2025-10-18\nTest  : 2025-10-19 \u2192 2026-12-31   (most recent 30% of the dates, target = stock status of the record)",
-  "default": {
-    "cv_f1_macro_mean": 0.740495620234563,
-    "cv_f1_macro_std": 0.011455333632410858,
-    "seconds": 6.4,
-    "test": {
-      "accuracy": 0.7813786691459689,
-      "balanced_accuracy": 0.7720029891075232,
-      "precision_macro": 0.734251155126952,
-      "recall_macro": 0.7720029891075232,
-      "f1_macro": 0.750820252841355,
-      "f1_weighted": 0.7840053723976652,
-      "mcc": 0.6063759580390569,
-      "per_class": {
-        "Understock": {
-          "precision": 0.7278250303766707,
-          "recall": 0.813306177868296,
-          "f1": 0.7681949342738057,
-          "support": 1473
-        },
-        "Healthy": {
-          "precision": 0.8552005438477226,
-          "recall": 0.7898702385935538,
-          "f1": 0.8212381677728212,
-          "support": 4778
-        },
-        "Overstock": {
-          "precision": 0.6197278911564625,
-          "recall": 0.7128325508607198,
-          "f1": 0.6630276564774381,
-          "support": 1278
-        }
-      },
-      "roc_auc_ovr_macro": 0.9112324792543779
+  "task": "regression",
+  "target": "Units_Sold",
+  "quick_run": false,
+  "n_train": 17487,
+  "n_test": 7513,
+  "features": [
+    "Month",
+    "Unit_Price",
+    "Discount_Percent",
+    "Marketing_Spend",
+    "Customer_Footfall",
+    "Log_Effective_Price",
+    "Price_Gap",
+    "Product_Category_Beauty",
+    "Product_Category_Clothing",
+    "Product_Category_Electronics",
+    "Product_Category_Groceries",
+    "Product_Category_Home & Kitchen",
+    "Product_Category_Sports",
+    "Product_Category_Toys",
+    "Product_Subcategory_Accessories",
+    "Product_Subcategory_Action Figures",
+    "Product_Subcategory_Audio",
+    "Product_Subcategory_Beverages",
+    "Product_Subcategory_Board Games",
+    "Product_Subcategory_Cookware",
+    "Product_Subcategory_Dairy",
+    "Product_Subcategory_Decor",
+    "Product_Subcategory_Educational",
+    "Product_Subcategory_Fitness",
+    "Product_Subcategory_Footwear",
+    "Product_Subcategory_Fragrance",
+    "Product_Subcategory_Fresh Produce",
+    "Product_Subcategory_Furniture",
+    "Product_Subcategory_Haircare",
+    "Product_Subcategory_Kids",
+    "Product_Subcategory_Laptop",
+    "Product_Subcategory_Makeup",
+    "Product_Subcategory_Men",
+    "Product_Subcategory_Mobile",
+    "Product_Subcategory_Outdoor",
+    "Product_Subcategory_Puzzles",
+    "Product_Subcategory_Skincare",
+    "Product_Subcategory_Snacks",
+    "Product_Subcategory_Sportswear",
+    "Product_Subcategory_Storage",
+    "Product_Subcategory_Team Sports",
+    "Product_Subcategory_Women",
+    "Weather_Condition_Cloudy",
+    "Weather_Condition_Rainy",
+    "Weather_Condition_Snowy",
+    "Weather_Condition_Stormy",
+    "Weather_Condition_Sunny",
+    "Store_Type_Convenience Store",
+    "Store_Type_Hypermarket",
+    "Store_Type_Online Store",
+    "Store_Type_Supermarket",
+    "Promotion",
+    "Holiday"
+  ],
+  "n_model_inputs": 53,
+  "split": "Train 2023-01-01 to 2025-10-19; test 2025-10-20 to 2026-12-31 (latest dates held out)",
+  "validation": "TimeSeriesSplit, 5 folds on the training period",
+  "tuning": {
+    "method": "Optuna TPE + median pruner",
+    "n_trials": 60,
+    "n_pruned": 11,
+    "best_cv_rmse": 10.828227133024907
+  },
+  "reference": {
+    "mean_predictor": {
+      "mae": 12.178190707217457,
+      "mse": 271.1098341727109,
+      "rmse": 16.465413270632197,
+      "r2": -0.004064963437904412,
+      "wape": 0.45706694433616457,
+      "bias": -1.0476592483971163
+    },
+    "single_decision_tree": {
+      "mae": 9.345077531321694,
+      "mse": 157.5098479470063,
+      "rmse": 12.550292743478389,
+      "r2": 0.416656646917238,
+      "wape": 0.35073568270649064,
+      "bias": -0.3620465882990186
     }
   },
-  "tuned": {
-    "cv_f1_macro_mean": 0.7472939738546941,
-    "cv_f1_macro_std": 0.005368635440098278,
-    "seconds": 75.4,
-    "best_params": {
-      "clf__colsample_bytree": 0.6234380314193007,
-      "clf__gamma": 0.3481521364198942,
-      "clf__learning_rate": 0.11274830651868056,
-      "clf__max_depth": 7,
-      "clf__min_child_weight": 1,
-      "clf__n_estimators": 589,
-      "clf__reg_alpha": 0.0012902113024567154,
-      "clf__reg_lambda": 1.6562605893335958,
-      "clf__subsample": 0.8010716092915446
+  "default": {
+    "train": {
+      "mae": 5.78916053325594,
+      "mse": 55.659687138232854,
+      "rmse": 7.460542013703352,
+      "r2": 0.7678770484028441,
+      "wape": 0.22616949744987594,
+      "bias": -0.0004606828440344817
     },
     "test": {
-      "accuracy": 0.792402709523177,
-      "balanced_accuracy": 0.7676096822515293,
-      "precision_macro": 0.7494975105143712,
-      "recall_macro": 0.7676096822515293,
-      "f1_macro": 0.758065940384297,
-      "f1_weighted": 0.7935830832408362,
-      "mcc": 0.6160579142422399,
-      "per_class": {
-        "Understock": {
-          "precision": 0.7498400511836213,
-          "recall": 0.7956551255940258,
-          "f1": 0.7720685111989459,
-          "support": 1473
+      "mae": 8.613113692826888,
+      "mse": 133.12695777603582,
+      "rmse": 11.538065599399053,
+      "r2": 0.5069595523899684,
+      "wape": 0.3232639109902607,
+      "bias": -0.30550492452064587
+    },
+    "cv_mae_mean": 8.835051999173102,
+    "cv_mae_std": 0.40330746469547446,
+    "cv_mse_mean": 136.3140957781668,
+    "cv_mse_std": 13.94154711246451,
+    "cv_rmse_mean": 11.662883996746796,
+    "cv_rmse_std": 0.6033579540727078,
+    "cv_r2_mean": 0.43970479159900105,
+    "cv_r2_std": 0.03249235923497167,
+    "params": {},
+    "seconds": 1.3
+  },
+  "tuned": {
+    "train": {
+      "mae": 7.946858764669598,
+      "mse": 107.06782018761437,
+      "rmse": 10.347358125995948,
+      "r2": 0.5534847621169785,
+      "wape": 0.3104659203671463,
+      "bias": 0.006687436251341189
+    },
+    "test": {
+      "mae": 8.207754772162923,
+      "mse": 118.14659396636776,
+      "rmse": 10.869525931077572,
+      "r2": 0.5624398653293315,
+      "wape": 0.30805014338868425,
+      "bias": -0.268387900042372
+    },
+    "cv_mae_mean": 8.2543625012439,
+    "cv_mae_std": 0.26917258452855947,
+    "cv_mse_mean": 117.39017116573436,
+    "cv_mse_std": 9.038819001607669,
+    "cv_rmse_mean": 10.828227133024907,
+    "cv_rmse_std": 0.4178341796658361,
+    "cv_r2_mean": 0.516705162568387,
+    "cv_r2_std": 0.02445673832818884,
+    "best_params": {
+      "objective": "count:poisson",
+      "n_estimators": 700,
+      "learning_rate": 0.10054436342965066,
+      "max_depth": 2,
+      "min_child_weight": 15.166840873208267,
+      "subsample": 0.877772644889569,
+      "colsample_bytree": 0.4011675088607647,
+      "gamma": 4.292485657464531,
+      "reg_alpha": 0.021442257895003577,
+      "reg_lambda": 0.08226766452050088
+    },
+    "seconds": 142.5
+  },
+  "feature_importance": [
+    {
+      "feature": "Log_Effective_Price",
+      "gain": 0.080765,
+      "permutation_rmse_increase": 2.135491,
+      "permutation_std": 0.069787,
+      "shap_mean_abs": 0.13367900252342224
+    },
+    {
+      "feature": "Marketing_Spend",
+      "gain": 0.078767,
+      "permutation_rmse_increase": 1.675084,
+      "permutation_std": 0.04285,
+      "shap_mean_abs": 0.12817800045013428
+    },
+    {
+      "feature": "Unit_Price",
+      "gain": 0.052399,
+      "permutation_rmse_increase": 1.674743,
+      "permutation_std": 0.077955,
+      "shap_mean_abs": 0.10458599776029587
+    },
+    {
+      "feature": "Customer_Footfall",
+      "gain": 0.06274,
+      "permutation_rmse_increase": 1.415759,
+      "permutation_std": 0.093898,
+      "shap_mean_abs": 0.11953499913215637
+    },
+    {
+      "feature": "Price_Gap",
+      "gain": 0.029063,
+      "permutation_rmse_increase": 0.905321,
+      "permutation_std": 0.052357,
+      "shap_mean_abs": 0.08771499991416931
+    },
+    {
+      "feature": "Holiday",
+      "gain": 0.195561,
+      "permutation_rmse_increase": 0.874216,
+      "permutation_std": 0.032613,
+      "shap_mean_abs": 0.07007700204849243
+    },
+    {
+      "feature": "Promotion",
+      "gain": 0.140518,
+      "permutation_rmse_increase": 0.464028,
+      "permutation_std": 0.035458,
+      "shap_mean_abs": 0.07290799915790558
+    },
+    {
+      "feature": "Product (category + subcategory)",
+      "gain": 0.236777,
+      "permutation_rmse_increase": 0.386486,
+      "permutation_std": 0.012896,
+      "shap_mean_abs": 0.08097799867391586
+    },
+    {
+      "feature": "Weather_Condition",
+      "gain": 0.062284,
+      "permutation_rmse_increase": 0.35883,
+      "permutation_std": 0.021962,
+      "shap_mean_abs": 0.08453799784183502
+    },
+    {
+      "feature": "Month",
+      "gain": 0.006982,
+      "permutation_rmse_increase": 0.211248,
+      "permutation_std": 0.01352,
+      "shap_mean_abs": 0.03750300034880638
+    },
+    {
+      "feature": "Store_Type",
+      "gain": 0.051984,
+      "permutation_rmse_increase": 0.006946,
+      "permutation_std": 0.003632,
+      "shap_mean_abs": 0.007230999879539013
+    },
+    {
+      "feature": "Discount_Percent",
+      "gain": 0.002161,
+      "permutation_rmse_increase": 0.001976,
+      "permutation_std": 0.003217,
+      "shap_mean_abs": 0.007207999937236309
+    }
+  ],
+  "effect_on_units": {
+    "Promotion": 4.1389312744140625,
+    "Holiday": 6.92170524597168
+  },
+  "error_analysis": {
+    "share_under_predicted": 0.49460934380407295,
+    "within_5_units": 0.3966458139225343,
+    "within_20_percent": 0.3778783442033808,
+    "bias_lowest_demand_quarter": 7.532239852781433,
+    "bias_highest_demand_quarter": -10.175555286062158,
+    "hardest_category": "Groceries",
+    "easiest_category": "Electronics"
+  },
+  "robustness": {
+    "seed_stability": {
+      "mae_mean": 8.21323346533154,
+      "mae_std": 0.006999618372798694,
+      "rmse_mean": 10.88890892331774,
+      "rmse_std": 0.007802818227012101,
+      "r2_mean": 0.5608777425365077,
+      "r2_std": 0.0006291401347565024
+    },
+    "walk_forward": [
+      {
+        "block": 1,
+        "from": "2025-10-20",
+        "to": "2026-02-06",
+        "n": 1923,
+        "train_rows": 17487,
+        "retrained": {
+          "mae": 8.814036400071421,
+          "mse": 136.49667054681757,
+          "rmse": 11.683178957236663,
+          "r2": 0.57852241528666,
+          "wape": 0.30996291279282656,
+          "bias": -0.1436189536433386
         },
-        "Healthy": {
-          "precision": 0.8485045513654096,
-          "recall": 0.8193804939305148,
-          "f1": 0.8336882453151618,
-          "support": 4778
-        },
-        "Overstock": {
-          "precision": 0.6501479289940828,
-          "recall": 0.687793427230047,
-          "f1": 0.6684410646387833,
-          "support": 1278
+        "static": {
+          "mae": 8.814036400071421,
+          "mse": 136.49667054681757,
+          "rmse": 11.683178957236663,
+          "r2": 0.57852241528666,
+          "wape": 0.30996291279282656,
+          "bias": -0.1436189536433386
         }
       },
-      "roc_auc_ovr_macro": 0.9162162345463215
-    }
+      {
+        "block": 2,
+        "from": "2026-02-07",
+        "to": "2026-05-27",
+        "n": 1849,
+        "train_rows": 19410,
+        "retrained": {
+          "mae": 7.429039022869649,
+          "mse": 95.69627754205968,
+          "rmse": 9.782447420868648,
+          "r2": 0.5518202723526683,
+          "wape": 0.3081544587510315,
+          "bias": 0.030581632390287904
+        },
+        "static": {
+          "mae": 7.44610617056352,
+          "mse": 96.26506641308154,
+          "rmse": 9.811476260638944,
+          "r2": 0.5491564316281283,
+          "wape": 0.308862399259062,
+          "bias": 0.018842206122489668
+        }
+      },
+      {
+        "block": 3,
+        "from": "2026-05-28",
+        "to": "2026-09-13",
+        "n": 1826,
+        "train_rows": 21259,
+        "retrained": {
+          "mae": 7.694553581803939,
+          "mse": 101.01482850729624,
+          "rmse": 10.050613339856241,
+          "r2": 0.5186258635207094,
+          "wape": 0.3018768631238638,
+          "bias": -0.9109678610522802
+        },
+        "static": {
+          "mae": 7.675593625546024,
+          "mse": 100.58924469720105,
+          "rmse": 10.029418961096454,
+          "r2": 0.5206539324895079,
+          "wape": 0.3011330159260692,
+          "bias": -0.8850356080576467
+        }
+      },
+      {
+        "block": 4,
+        "from": "2026-09-14",
+        "to": "2026-12-31",
+        "n": 1915,
+        "train_rows": 23085,
+        "retrained": {
+          "mae": 8.86193403786841,
+          "mse": 138.98696906697316,
+          "rmse": 11.78927347494209,
+          "r2": 0.5574897951671776,
+          "wape": 0.3120915769997978,
+          "bias": -0.012081825017306574
+        },
+        "static": {
+          "mae": 8.841767799636402,
+          "mse": 137.5886132600073,
+          "rmse": 11.729817273086878,
+          "r2": 0.561941915525824,
+          "wape": 0.3113813806628485,
+          "bias": -0.08301998118507645
+        }
+      }
+    ]
+  },
+  "run": {
+    "seed": 42,
+    "seconds": 156.7,
+    "xgboost": "3.4.1",
+    "python": "3.14.6",
+    "finished": "2026-11-27 17:35"
   }
 }

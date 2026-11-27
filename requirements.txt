@@ -8,3 +8,4 @@ xgboost
 matplotlib
 joblib
 seaborn
+optuna

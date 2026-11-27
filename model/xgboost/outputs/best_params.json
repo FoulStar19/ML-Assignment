@@ -1,0 +1,12 @@
+{
+  "objective": "count:poisson",
+  "n_estimators": 700,
+  "learning_rate": 0.10054436342965066,
+  "max_depth": 2,
+  "min_child_weight": 15.166840873208267,
+  "subsample": 0.877772644889569,
+  "colsample_bytree": 0.4011675088607647,
+  "gamma": 4.292485657464531,
+  "reg_alpha": 0.021442257895003577,
+  "reg_lambda": 0.08226766452050088
+}

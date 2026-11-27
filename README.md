@@ -1,4 +1,4 @@
 # ML-Assignment
 
 Assignment Title: 
-Smart Retail Inventory Prediction and Optimization System Using Machine Learning
+Smart Retail Sales Prediction and Optimization System Using Machine Learning

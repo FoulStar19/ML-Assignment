@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from importlib.resources import path
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
 # ─────────────────────────────────────────────
@@ -157,3 +158,11 @@ def confusion_matrix_plot(cm, class_names):
             ax.text(j, i, str(cm[i, j]), ha='center', va='center', color='red')
     
     return fig, ax
+
+# ─────────────────────────────────────────────
+# 3. SHARED HELPER FUNCTIONS
+# ─────────────────────────────────────────────
+def save_plot(fig, filename):
+    fig.tight_layout()
+    fig.savefig(filename, dpi=120)
+    plt.close(fig)

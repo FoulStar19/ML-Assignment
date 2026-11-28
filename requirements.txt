@@ -9,3 +9,6 @@ matplotlib
 joblib
 seaborn
 optuna
+keras 
+tensorflow
+torch

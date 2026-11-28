@@ -13,7 +13,7 @@ from model.evaluation import evaluate_model, default_vs_tuned_model_comparison
 # 1. BASE MODEL (no hyperparameter tuning)
 # ─────────────────────────────────────────────
 def train_linear_regression_base():
-    X_train, y_train, X_test, y_test = load_model_data()
+    X_train, y_train, X_test, y_test, meta_test = load_model_data()
 
     # Train a base Ridge model
     ridge_model = Ridge(random_state=SEED)
@@ -45,7 +45,7 @@ def train_linear_regression_base():
 # 2. TUNED MODEL (with hyperparameter tuning)
 # ─────────────────────────────────────────────
 def train_linear_regression_tuned():
-    X_train, y_train, X_test, y_test = load_model_data()
+    X_train, y_train, X_test, y_test, meta_test = load_model_data()
 
     # Define hyperparameter grid for Ridge and Lasso
     param_grid_ridge = {"alpha": [0.1, 1.0, 10.0]}

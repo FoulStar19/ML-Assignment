@@ -6,7 +6,7 @@ from pathlib import Path
 
 import joblib
 import matplotlib
-matplotlib.use("Agg")                      # no display needed (server / UI backend safe)
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -25,8 +25,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
 warnings.filterwarnings("ignore")
-# n_jobs=-1 runs work in separate processes (spawned on Windows) that do NOT inherit the filter above;
-# an environment variable IS inherited, so the workers stay quiet too.
 os.environ["PYTHONWARNINGS"] = "ignore"
 
 LINE = "─" * 45
@@ -35,7 +33,6 @@ LINE = "─" * 45
 # 0. SETTINGS
 # ─────────────────────────────────────────────
 SEED = 42
-# src/backend/model/mlp/<this file>  -> project root is 4 levels up. PROJECT_ROOT can override it.
 ROOT_DIR = (Path(os.environ["PROJECT_ROOT"]) if "PROJECT_ROOT" in os.environ
             else Path(__file__).resolve().parents[2])
 TRAIN_FILE = ROOT_DIR / "data" / "processed" / "train.csv"
@@ -47,26 +44,23 @@ REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 TARGET = "Units_Sold"
 
-# Column lists come from the data-preparation code, so they are defined in one place only.
 if str(ROOT_DIR / "src" / "backend") not in sys.path:
     sys.path.insert(0, str(ROOT_DIR / "src" / "backend"))
-from data_modeling import NON_FEATURE_COLS   # noqa: E402  (target, date, ID and stock columns)
-# Same exclusions as the linear baseline (Inventory_Level is kept for the recommender).
-NON_FEATURES = NON_FEATURE_COLS   # Units_Sold, Date, Transaction_ID, Store_ID, Product_ID, Inventory_Level
+from data_modeling import NON_FEATURE_COLS  
+NON_FEATURES = NON_FEATURE_COLS  
 
-N_SPLITS = 5            # time-ordered CV folds (same as the linear baseline)
-N_ITER_SEARCH = 25      # random-search budget (training a network is slower, so random > grid)
-N_ENSEMBLE = 5          # MLPs with different seeds averaged together (Part B.2)
-N_BOOTSTRAP = 500       # resamples for the confidence intervals on test error
+N_SPLITS = 5          
+N_ITER_SEARCH = 25   
+N_ENSEMBLE = 5         
+N_BOOTSTRAP = 500 
 GROUP_PREFIXES = ["Product_Category_", "Store_Type_", "Weather_Condition_"]
-PDP_FEATURES = ["Unit_Price", "Customer_Footfall", "Marketing_Spend", "Month"]   # curves to draw
+PDP_FEATURES = ["Unit_Price", "Customer_Footfall", "Marketing_Spend", "Month"] 
 
 
 # ─────────────────────────────────────────────
 # 1. HELPERS
 # ─────────────────────────────────────────────
 def load_split(path):
-    """Read a prepared split (already encoded + scaled by data_modeling.py)."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"{path} not found - run pipeline.py first")
     df = pd.read_csv(path)
@@ -74,38 +68,25 @@ def load_split(path):
 
 
 def decode_group(X, prefix):
-    """Turn a one-hot family (e.g. Product_Category_*) back into one readable label per row."""
     cols = [c for c in X.columns if c.startswith(prefix)]
     return X[cols].idxmax(axis=1).str.replace(prefix, "", regex=False)
 
 
 def score_all(y_true, y_pred):
-    """Regression metrics (identical to the linear baseline). Predictions are clipped at 0."""
     y_pred = np.clip(np.asarray(y_pred, dtype=float), 0, None)
     y_true = np.asarray(y_true, dtype=float)
     return {
-        "MAE": mean_absolute_error(y_true, y_pred),                  # average miss, in units
-        "RMSE": float(np.sqrt(mean_squared_error(y_true, y_pred))),   # punishes big misses more
-        "MedAE": median_absolute_error(y_true, y_pred),              # robust to a few huge misses
-        "R2": r2_score(y_true, y_pred),                              # share of variance explained
+        "MAE": mean_absolute_error(y_true, y_pred),
+        "RMSE": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "MedAE": median_absolute_error(y_true, y_pred),
+        "R2": r2_score(y_true, y_pred),
         "sMAPE_%": 100 * np.mean(2 * np.abs(y_pred - y_true) / (np.abs(y_true) + np.abs(y_pred) + 1e-9)),
-        "Bias": float(np.mean(y_pred - y_true)),                     # >0 = over-forecasting on average
+        "Bias": float(np.mean(y_pred - y_true)),
     }
 
 
-def make_model(hidden=(64, 32), activation="relu", alpha=1e-4, lr=1e-3, batch=128,
-               target="standard", seed=SEED, early_stopping=True, max_iter=500):
-    """
-    One MLP regressor wrapped so the TARGET is scaled too.
-    Why scale the target?  An MLP's output layer starts near 0 and learns best when the target is
-    around 0 +/- 1. Raw Units_Sold (mean 26, max 138) makes training slow and unstable.
-      target = "raw"      : no scaling (plain sklearn default - kept as the V0 comparison)
-      target = "standard" : (y - mean) / std
-      target = "log"      : log(1 + y) then standardise (tames the long right tail of sales)
-    Predictions are converted back to units automatically.
-    Early stopping holds back 10% of the TRAINING rows, stops when it stops improving and keeps
-    the best weights - a built-in guard against over-fitting.
-    """
+def make_model(hidden=(64, 32), activation="relu", alpha=1e-4, lr=1e-3, batch=128, target="standard", seed=SEED, early_stopping=True, max_iter=500):
+
     mlp = MLPRegressor(hidden_layer_sizes=hidden, activation=activation, alpha=alpha,
                        learning_rate_init=lr, batch_size=batch, max_iter=max_iter,
                        early_stopping=early_stopping, validation_fraction=0.1, n_iter_no_change=15,
@@ -122,9 +103,6 @@ def make_model(hidden=(64, 32), activation="relu", alpha=1e-4, lr=1e-3, batch=12
 
 
 class SeedEnsemble(BaseEstimator, RegressorMixin):
-    """Average of several identical MLPs that differ only in their random start (Part B.2).
-    A single network depends on its random initial weights; averaging cancels that luck, which
-    lowers the variance of the predictions without adding bias."""
 
     def __init__(self, base=None, n_members=N_ENSEMBLE):
         self.base = base
@@ -149,8 +127,6 @@ def cv_scores(model, X, y, cv):
 
 
 def partial_dependence(model, X, col, n=12):
-    """Average prediction as ONE input is moved across its range while all other inputs keep their
-    real values. Shows the SHAPE of the effect (a straight line for linear models, curves for MLP)."""
     grid = np.unique(np.percentile(X[col], np.linspace(5, 95, n)))
     curve = []
     for v in grid:
@@ -167,7 +143,7 @@ def train_mlp():
     np.random.seed(SEED)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load the prepared data (same files as the linear baseline)
+    # 1. Load the prepared data
     print(LINE)
     print("1. Data")
     X_train, y_train, date_train = load_split(TRAIN_FILE)
@@ -182,7 +158,7 @@ def train_mlp():
     print("Missing values : none (handled upstream in data_cleaning.py: median / mode imputation)")
     print(LINE + "\n")
 
-    cv = TimeSeriesSplit(n_splits=N_SPLITS)    # always validate on dates AFTER the training dates
+    cv = TimeSeriesSplit(n_splits=N_SPLITS)   
 
     # 2. Reference points: "no learning" and the linear baseline the MLP must beat
     print(LINE)
@@ -199,7 +175,7 @@ def train_mlp():
     print("The MLP must clearly beat the linear model to justify its extra complexity.")
     print(LINE + "\n")
 
-    # 3. Iterate (A.5 / A.6): one change at a time, judged by CV on TRAIN only
+    # 3. Iterate: one change at a time, judged by CV on TRAIN only
     print(LINE)
     print("3. Refinement experiments (cross-validation on TRAIN only - test stays untouched)")
     variants = {
@@ -213,19 +189,18 @@ def train_mlp():
     exp = pd.DataFrame(rows).round(4)
     print(exp.to_string(index=False))
     exp.to_csv(REPORT_DIR / "experiments_cv.csv", index=False)
-    # choose the target representation automatically from the experiments
     target_mode = "log" if exp.loc[exp.variant.str.contains("log"), "cv_RMSE"].iloc[0] < \
         exp.loc[exp.variant.str.contains("V1"), "cv_RMSE"].iloc[0] else "standard"
     print(f"Target representation chosen by CV: {target_mode}")
     print(LINE + "\n")
 
-    # 4. Part B.1 - automatic random search over architecture, regularisation and learning settings
+    # 4. automatic random search over architecture, regularisation and learning settings
     print(LINE)
     print("4. Hyper-parameter tuning (RandomizedSearchCV, TimeSeriesSplit)")
     space = {
         "regressor__hidden_layer_sizes": [(64,), (128,), (64, 32), (128, 64), (128, 64, 32), (256, 128)],
         "regressor__activation": ["relu", "tanh"],
-        "regressor__alpha": loguniform(1e-5, 1e0),            # L2 penalty: bigger = simpler network
+        "regressor__alpha": loguniform(1e-5, 1e0),   
         "regressor__learning_rate_init": loguniform(1e-4, 1e-2),
         "regressor__batch_size": [64, 128, 256],
     }
@@ -240,7 +215,7 @@ def train_mlp():
     print("Top-5 CV RMSE    :", (-top["mean_test_score"]).round(3).tolist())
     print(LINE + "\n")
 
-    # 5. Part B.2 - ensemble of MLPs with different random seeds
+    # 5. ensemble of MLPs with different random seeds
     print(LINE)
     print(f"5. Ensemble of {N_ENSEMBLE} MLPs (different random seeds)")
     best_single = search.best_estimator_                         # already refit on all training rows
@@ -260,16 +235,12 @@ def train_mlp():
     cmp = pd.DataFrame(results).T.round(4)
     print(cmp.to_string())
     cmp.to_csv(REPORT_DIR / "test_metrics_comparison.csv")
-    # final model = whichever of single / ensemble has the lower CV-independent test RMSE is NOT used to
-    # choose (that would peek at the test set): the ensemble is the default because averaging never
-    # increases the expected error and makes the result less seed-dependent.
     final_pred, final_name = ens_pred, "mlp_ensemble"
     yt = y_test.to_numpy(float)
     f = results[final_name]
     print(f"\nFinal model ({final_name}): off by {f['MAE']:.1f} units on average (mean sales {yt.mean():.1f}), "
           f"R2 {f['R2']:.3f}")
 
-    # Bootstrap CI for the MLP's RMSE, and a PAIRED bootstrap of MLP vs linear on the same resampled rows
     rng = np.random.default_rng(SEED)
     boot_rmse, boot_diff = [], []
     for _ in range(N_BOOTSTRAP):
@@ -277,7 +248,7 @@ def train_mlp():
         r_m = np.sqrt(np.mean((yt[idx] - final_pred[idx]) ** 2))
         r_l = np.sqrt(np.mean((yt[idx] - ols_pred[idx]) ** 2))
         boot_rmse.append(r_m)
-        boot_diff.append(r_l - r_m)                      # positive = MLP better
+        boot_diff.append(r_l - r_m)            
     lo, hi = np.percentile(boot_rmse, [2.5, 97.5])
     dlo, dhi = np.percentile(boot_diff, [2.5, 97.5])
     print(f"Bootstrap 95% CI for MLP RMSE: [{lo:.3f}, {hi:.3f}]")
@@ -288,7 +259,7 @@ def train_mlp():
     print(f"-> {verdict} (interval {'excludes' if dlo > 0 or dhi < 0 else 'includes'} 0).")
     print(LINE + "\n")
 
-    # 7. Generalisation: over-fitting check and learning curve (A.4)
+    # 7. Generalisation: over-fitting check and learning curve 
     print(LINE)
     print("7. Generalisation")
     train_pred = np.clip(ens.predict(X_train), 0, None)
@@ -296,7 +267,7 @@ def train_mlp():
     print(f"Train RMSE {tr['RMSE']:.3f} vs test RMSE {f['RMSE']:.3f} (gap {f['RMSE'] - tr['RMSE']:+.3f}); "
           f"train R2 {tr['R2']:.3f} vs test R2 {f['R2']:.3f}")
     print("A large gap means over-fitting; a small gap with a low R2 means the limit is the data, not the model.")
-    lc = []                                  # learning curve: train on the EARLIEST fraction of the data
+    lc = []                            
     for frac in (0.25, 0.5, 0.75, 1.0):
         n = int(len(X_train) * frac)
         m = clone(best_single).fit(X_train.iloc[:n], y_train.iloc[:n])
@@ -309,7 +280,7 @@ def train_mlp():
     print("If test RMSE is still falling at 100%, more data would help; if it is flat, the model has saturated.")
     print(LINE + "\n")
 
-    # 8. Interpretability (A.3): an MLP has no coefficients, so use model-agnostic tools
+    # 8. Interpretability: an MLP has no coefficients, so use model-agnostic tools
     print(LINE)
     print("8. Key drivers of sales")
     perm = permutation_importance(ens, X_test, y_test, scoring="neg_root_mean_squared_error",
@@ -327,10 +298,10 @@ def train_mlp():
     print("non-linear behaviour that the linear baseline cannot represent.")
     print(LINE + "\n")
 
-    # 9. Error analysis (A.4)
+    # 9. Error analysis 
     print(LINE)
     print("9. Error analysis")
-    resid = yt - final_pred                          # actual - predicted
+    resid = yt - final_pred
     print(f"Mean residual (bias): {-resid.mean():+.2f} units  (0 = no systematic over/under-forecast)")
     r_ph, p_ph = stats.spearmanr(final_pred, np.abs(resid))
     print(f"Error grows with predicted size? Spearman(|residual|, prediction) = {r_ph:.2f} (p={p_ph:.1e})")
@@ -345,13 +316,13 @@ def train_mlp():
         label = decode_group(X_test, prefix)
         for val in sorted(label.unique()):
             m = (label == val).to_numpy()
-            if m.sum() >= 30:                                   # tiny groups are too noisy
+            if m.sum() >= 30:
                 s, sl = score_all(yt[m], final_pred[m]), score_all(yt[m], ols_pred[m])
                 slices.append({"slice": prefix.rstrip("_"), "value": val, "rows": int(m.sum()),
                                "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"],
                                "linear_MAE": sl["MAE"], "MAE_gain_vs_linear": sl["MAE"] - s["MAE"]})
     dts = pd.to_datetime(date_test).reset_index(drop=True)
-    for i, chunk in enumerate(np.array_split(np.arange(len(dts)), 3), 1):   # 3 chronological periods
+    for i, chunk in enumerate(np.array_split(np.arange(len(dts)), 3), 1):
         s, sl = score_all(yt[chunk], final_pred[chunk]), score_all(yt[chunk], ols_pred[chunk])
         slices.append({"slice": "Time period", "value": f"T{i}: {dts[chunk[0]].date()} to {dts[chunk[-1]].date()}",
                        "rows": len(chunk), "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"],
@@ -366,7 +337,6 @@ def train_mlp():
                           "AbsError": np.abs(resid).round(1)}).sort_values("AbsError", ascending=False)
     worst.head(20).to_csv(REPORT_DIR / "worst_predictions.csv", index=False)
 
-    # Row-level predictions for Student C (evaluation) and Student D (UI / recommender)
     pd.DataFrame({"Date": date_test.values, "Actual_Units": yt, "Predicted_Units": final_pred.round(2),
                   "Error": (final_pred - yt).round(2),
                   "Predicted_Units_Linear": ols_pred.round(2)}).to_csv(REPORT_DIR / "test_predictions.csv", index=False)
@@ -379,7 +349,7 @@ def train_mlp():
     print(f"Saved to {REPORT_DIR}")
     print(LINE + "\n")
 
-    # 11. Shortlist summary + save (A.7)
+    # 11. Shortlist summary + save
     print(LINE)
     print("11. Summary and saving")
     base_r = results["linear_regression_baseline"]
@@ -390,7 +360,6 @@ def train_mlp():
         print("The MLP does not clearly beat the linear model: most of the remaining error is noise the inputs")
         print("cannot explain, so extra model complexity brings little - a valid and reportable finding.")
     MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
-    # Save the list of fitted networks (average their predictions) - avoids pickling a custom class.
     joblib.dump({"models": ens.models_, "features": cols, "best_params": best_params,
                  "target_mode": target_mode, "metrics": results}, MODEL_FILE)
     with open(REPORT_DIR / "metrics.json", "w") as fh:
@@ -412,7 +381,6 @@ def predict_units(bundle, X):
 # 3. PLOTS
 # ─────────────────────────────────────────────
 def _save_plots(ens, y, pred, resid, imp, results, pdps, lc):
-    # Training curves of the first network: loss should fall and validation R2 should level off
     reg = ens.models_[0].regressor_
     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
     axs[0].plot(reg.loss_curve_); axs[0].set(title="Training loss", xlabel="epoch", ylabel="loss")

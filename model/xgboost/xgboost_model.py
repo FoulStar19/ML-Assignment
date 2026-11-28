@@ -1,30 +1,3 @@
-"""XGBoost Regressor: predicts Units_Sold (demand) so stock can be planned before it runs out or piles up.
-
-Run on its own (after `python src/backend/pipeline.py --skip-modeling` has made train.csv / test.csv):
-
-    python model/xgboost/xgboost_model.py                 # full run (a few minutes)
-    python model/xgboost/xgboost_model.py --trials 30     # faster run
-    python model/xgboost/xgboost_model.py --quick         # smoke test only, results are NOT final
-
-or through the pipeline:  python src/backend/pipeline.py
-Everything is written to model/xgboost/outputs/ and read back by xgboost_results.py.
-
-Why XGBoost: gradient boosting builds many small trees one after another, each fitted to the mistakes of the
-trees before it. It captures non-linear effects and interactions without manual feature work and has many
-regularisation settings, which makes it a strong model for tabular data.
-
-Method (follows Part A / Part B of the assignment):
-    1. Same data as the other models: the pipeline's time-based split (test = latest 30% of dates).
-    2. Reference points: mean predictor and a single decision tree.
-    3. Default XGBoost scored with time-series cross-validation (CV) on the training period only.
-    4. Hyper-parameter tuning with Optuna (TPE search + pruning) scored by time-series CV.
-       The test set is never used to choose settings.
-    5. Final model fitted on the training period, scored once on the test period.
-       Also evaluated: an ensemble (average) of the best tuned settings.
-    6. Interpretation: gain / permutation / SHAP importance, partial dependence, promotion and holiday effect.
-    7. Error analysis: residuals, error by segment, worst predictions.
-    8. Robustness: 5 random seeds and walk-forward retraining over the test period.
-"""
 import argparse
 import json
 import os
@@ -37,7 +10,7 @@ from pathlib import Path
 import joblib
 import matplotlib
 
-matplotlib.use("Agg")                     # draw to files only, so it also works on a server without a screen
+matplotlib.use("Agg")                     
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -48,14 +21,10 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 
-# ─────────────────────────────────────────────
-# 0. SETTINGS
-# ─────────────────────────────────────────────
 HERE = Path(__file__).resolve().parent
-ROOT_DIR = HERE.parents[1]                             # model/xgboost/xgboost_model.py -> project root
+ROOT_DIR = HERE.parents[1]                             
 OUT_DIR = HERE / "outputs"
 
-# Column names and file paths come from the data-preparation code, so they are defined in one place only.
 if str(ROOT_DIR / "src" / "backend") not in sys.path:
     sys.path.insert(0, str(ROOT_DIR / "src" / "backend"))
 from data_modeling import (CAT_COLS, DATE_COL, NUM_COLS, PREPROCESSOR_FILE, STOCK_COLS,   # noqa: E402
@@ -63,15 +32,13 @@ from data_modeling import (CAT_COLS, DATE_COL, NUM_COLS, PREPROCESSOR_FILE, STOC
 
 LINE = "─" * 45
 SEED = 42
-N_TRIALS = 80            # Optuna trials (TPE needs roughly 10 x the number of tuned settings)
+N_TRIALS = 80            # Optuna trials 
 CV_SPLITS = 5            # time-series CV folds: always train on the past, validate on the next block of dates
 ENSEMBLE_SIZE = 5        # number of best tuned settings averaged in the ensemble check
 WALK_FORWARD_BLOCKS = 4  # the test period is cut into this many blocks for the "does it adapt over time" check
 SHAP_ROWS = 2000         # test rows used for SHAP / partial dependence (keeps it fast)
 FIXED = dict(tree_method="hist", n_jobs=-1, random_state=SEED, eval_metric="rmse")   # same for every model here
 
-# Category and subcategory describe the same thing, so they are reported as ONE feature
-# (shuffled alone, each looks unimportant because the other still carries the information).
 MERGED = {"Product_Category": "Product (category + subcategory)",
           "Product_Subcategory": "Product (category + subcategory)"}
 
@@ -86,7 +53,6 @@ BLUE, ORANGE, GREY, GREEN, RED = "#3B5BDB", "#F5A524", "#8A94A6", "#22A27B", "#E
 # 1. DATA
 # ─────────────────────────────────────────────
 def load_data():
-    """Read the pipeline's train.csv / test.csv, so every model sees exactly the same rows and features."""
     for f in (TRAIN_FILE, TEST_FILE):
         if not os.path.exists(f):
             raise FileNotFoundError(f"{f} not found. Run `python src/backend/pipeline.py --skip-modeling` first.")
@@ -109,13 +75,11 @@ def load_data():
 
 
 def decode(df, prefix):
-    """Turn one-hot columns (Product_Category_Toys = 1 ...) back into one readable label per row."""
     cols = [c for c in df.columns if c.startswith(prefix + "_")]
     return df[cols].idxmax(axis=1).str[len(prefix) + 1:]
 
 
 def feature_groups(columns):
-    """{original feature: [model columns]}: one-hot columns are grouped back, so importance is per real feature."""
     groups = {}
     for c in columns:
         base = next((cat for cat in CAT_COLS if c.startswith(cat + "_")), c)
@@ -127,11 +91,7 @@ def feature_groups(columns):
 # 2. METRICS AND CROSS-VALIDATION
 # ─────────────────────────────────────────────
 def metrics(y, pred):
-    """MAE, MSE, RMSE, R2 (required by the assignment) + WAPE and bias (useful for stock planning).
-
-    WAPE = total absolute error / total units sold ("we miss about X% of demand").
-    bias = average (prediction - actual): negative = under-prediction = stock-out risk.
-    """
+   
     y, pred = np.asarray(y, float), np.asarray(pred, float)
     err = pred - y
     mse = float(np.mean(err ** 2))
@@ -148,7 +108,6 @@ def new_model(params=None, **extra):
 
 
 def cv_scores(params, X, y, n_splits=CV_SPLITS):
-    """Time-series CV: fold k trains on everything before block k and is scored on block k."""
     rows = []
     for tr, va in TimeSeriesSplit(n_splits=n_splits).split(X):
         m = new_model(params).fit(X.iloc[tr], y.iloc[tr])
@@ -161,9 +120,6 @@ def cv_scores(params, X, y, n_splits=CV_SPLITS):
 # 3. HYPER-PARAMETER TUNING (Optuna)
 # ─────────────────────────────────────────────
 def suggest_params(trial):
-    """Search space. The ranges are wide on purpose: an earlier, narrower search kept choosing values at the edge
-    (max_depth 2, gamma and n_estimators near their limits), which means the best setting lay outside the range. The data is noisy,
-    so strong regularisation (shallow trees, large gamma / min_child_weight) is allowed."""
     p = {
         # Loss function: units sold are right-skewed counts, so Poisson / Tweedie are tried against squared error.
         "objective": trial.suggest_categorical("objective", ["reg:squarederror", "count:poisson", "reg:tweedie"]),
@@ -183,7 +139,6 @@ def suggest_params(trial):
 
 
 def tune(X, y, n_trials, n_splits):
-    """Find the settings with the lowest time-series CV RMSE. The test set is never touched here."""
     splits = list(TimeSeriesSplit(n_splits=n_splits).split(X))
 
     def objective(trial):
@@ -208,7 +163,6 @@ def tune(X, y, n_trials, n_splits):
 
 
 def ensemble_of_best_trials(study, Xtr, ytr, Xte, yte, k=ENSEMBLE_SIZE):
-    """Part B 'combine models': average the k best tuned settings (chosen by CV) and score on the test period."""
     finished = sorted([t for t in study.trials if t.value is not None], key=lambda t: t.value)[:k]
     preds = [predict(new_model(t.params).fit(Xtr, ytr), Xte) for t in finished]
     return {"members": len(finished), "test": metrics(yte, np.mean(preds, axis=0))}
@@ -218,7 +172,6 @@ def ensemble_of_best_trials(study, Xtr, ytr, Xte, yte, k=ENSEMBLE_SIZE):
 # 4. INTERPRETATION
 # ─────────────────────────────────────────────
 def grouped_permutation(model, X, y, groups, n_repeats=5):
-    """How much worse does RMSE get when one real feature is shuffled? (all its one-hot columns together)"""
     rng = np.random.default_rng(SEED)
     base = metrics(y, predict(model, X))["rmse"]
     out = {}
@@ -233,13 +186,10 @@ def grouped_permutation(model, X, y, groups, n_repeats=5):
 
 
 def shap_values(model, X):
-    """SHAP values from XGBoost itself (pred_contribs). The last column is the base value, so it is dropped.
-    For Poisson / Tweedie the contributions are on the log scale."""
     return model.get_booster().predict(xgb.DMatrix(X), pred_contribs=True)[:, :-1]
 
 
 def effect_curve(model, X, col, grid):
-    """Partial dependence: average prediction when `col` is forced to each value in `grid`, all else unchanged."""
     vals = []
     for v in grid:
         Xv = X.copy()
@@ -249,7 +199,6 @@ def effect_curve(model, X, col, grid):
 
 
 def scaler_info():
-    """Mean/std the pipeline used to standardise numeric columns, so charts can show real units."""
     try:
         sc = joblib.load(PREPROCESSOR_FILE).named_transformers_["num"]
         return dict(zip(NUM_COLS, zip(sc.mean_, sc.scale_)))
@@ -258,7 +207,6 @@ def scaler_info():
 
 
 def importance_table(model, Xte, yte, features, groups):
-    """Feature importance three ways (gain, permutation, SHAP). They should agree; if not, be careful with the story."""
     gain = model.get_booster().get_score(importance_type="gain")
     gain = pd.Series({c: gain.get(c, 0.0) for c in features})
     sample = Xte.sample(min(SHAP_ROWS, len(Xte)), random_state=SEED)
@@ -277,7 +225,6 @@ def importance_table(model, Xte, yte, features, groups):
 
 
 def business_effects(model, Xte, sample):
-    """What a promotion / holiday adds on average, and how the main numeric inputs act (shown in real units)."""
     effects, pdp, sc = {}, {}, scaler_info()
     for flag in ("Promotion", "Holiday"):
         on, off = Xte.copy(), Xte.copy()
@@ -294,7 +241,6 @@ def business_effects(model, Xte, sample):
 # 5. ERROR ANALYSIS
 # ─────────────────────────────────────────────
 def segment_table(test, y, pred):
-    """MAE / RMSE / bias per group: where does the model do well, and where does it struggle?"""
     seg = {c: decode(test, c) for c in ["Product_Category", "Store_Type", "Weather_Condition"]}
     seg["Promotion"] = test["Promotion"].map({0: "No", 1: "Yes"})
     seg["Holiday"] = test["Holiday"].map({0: "No", 1: "Yes"})
@@ -313,7 +259,6 @@ def segment_table(test, y, pred):
 
 
 def error_summary(seg, y, pred):
-    """A few headline numbers about the errors, for the report."""
     err = pred - y
     band = seg[seg["segment"] == "Actual demand band"].set_index("group")
     by_cat = seg[seg["segment"] == "Product_Category"].sort_values("mae")
@@ -329,7 +274,6 @@ def error_summary(seg, y, pred):
 
 
 def save_predictions(test, y, default_pred, pred):
-    """predictions.csv (every test row) and worst_predictions.csv (the 50 largest errors)."""
     err = pred - y
     preds = pd.DataFrame({"Date": test[DATE_COL].dt.date, "Transaction_ID": test["Transaction_ID"],
                           "Product_ID": test["Product_ID"], "Product_Category": decode(test, "Product_Category"),
@@ -343,15 +287,12 @@ def save_predictions(test, y, default_pred, pred):
 # 6. ROBUSTNESS
 # ─────────────────────────────────────────────
 def seed_stability(params, Xtr, ytr, Xte, yte, n_seeds=5):
-    """Same settings, different random seeds: is the score stable?"""
     rows = [metrics(yte, predict(new_model(params, random_state=s).fit(Xtr, ytr), Xte)) for s in range(n_seeds)]
     df = pd.DataFrame(rows)
     return {f"{k}_{s}": float(getattr(df[k], s)()) for k in ("mae", "rmse", "r2") for s in ("mean", "std")}
 
 
 def walk_forward(params, train, test, features, static_pred):
-    """Does the model adapt over time? Cut the test period into blocks; for each block retrain on everything
-    before it (train + earlier blocks) and predict the block. Compared with the model trained once and never updated."""
     y = test[TARGET].to_numpy()
     rows = []
     for k, block in enumerate(np.array_split(np.sort(test[DATE_COL].unique()), WALK_FORWARD_BLOCKS), start=1):
@@ -366,7 +307,7 @@ def walk_forward(params, train, test, features, static_pred):
 
 
 # ─────────────────────────────────────────────
-# 7. PLOTS (one small function per figure; each is saved as a PNG in outputs/)
+# 7. PLOTS
 # ─────────────────────────────────────────────
 def save(fig, name):
     fig.tight_layout()
@@ -502,7 +443,6 @@ PLOTS = [plot_default_vs_tuned, plot_predicted_vs_actual, plot_residuals, plot_e
 
 
 def plot_all(ctx):
-    """Draw every figure. A figure that fails is skipped with a message (the numbers are saved anyway)."""
     for fn in PLOTS:
         try:
             fn(ctx)

@@ -1,6 +1,0 @@
-variant,cv_RMSE,cv_RMSE_std,cv_MAE,cv_R2
-V0 OLS baseline,11.201,0.5359,8.5227,0.4836
-V1 + log target,11.2643,0.6472,8.4604,0.4776
-V2 + interactions,11.0643,0.5112,8.4508,0.496
-V3 + log + interactions,11.2105,0.5461,8.4569,0.4826
-V4 Ridge (a=10),11.2278,0.5668,8.4591,0.481

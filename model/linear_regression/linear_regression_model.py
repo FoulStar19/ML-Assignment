@@ -1,13 +1,19 @@
-import json
 import os
 import sys
 
-import joblib
-import GridSearchCV
-from sklearn.linear_model import Ridge, Lasso
+import numpy as np
+from sklearn.model_selection import GridSearchCV
+from sklearn.linear_model import Ridge
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from data_modeling import load_model_data, model_output_dir, SEED
-from model.evaluation import evaluate_model, default_vs_tuned_model_comparison
+from data_modeling import load_model_data, SEED
+from model.evaluation import (
+    evaluate_model, compare_model_results, save_results, save_model, generate_model_plots
+)
+
+# Models, results and plots are saved in an "outputs" folder inside this model's folder
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
+# The dashboard (src/frontend/config.py) loads its model from this folder / OUTPUT_DIR
+MODEL_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ─────────────────────────────────────────────
 # 1. BASE MODEL (no hyperparameter tuning)
@@ -19,27 +25,17 @@ def train_linear_regression_base():
     ridge_model = Ridge(random_state=SEED)
     ridge_model.fit(X_train, y_train)
 
-    # Train a base Lasso model
-    lasso_model = Lasso(random_state=SEED)
-    lasso_model.fit(X_train, y_train)
-
     # Evaluate on the held-out (most recent) test dates
     train_pred_ridge = ridge_model.predict(X_train)
     test_pred_ridge = ridge_model.predict(X_test)
-    train_pred_lasso = lasso_model.predict(X_train)
-    test_pred_lasso = lasso_model.predict(X_test)
-    
+
     results = {
         "ridge": {
             "train_metrics": evaluate_model(y_train, train_pred_ridge),
             "test_metrics": evaluate_model(y_test, test_pred_ridge)
-        },
-        "lasso": {
-            "train_metrics": evaluate_model(y_train, train_pred_lasso),
-            "test_metrics": evaluate_model(y_test, test_pred_lasso)
         }
     }
-    return results
+    return results, {"ridge": ridge_model}
 
 # ─────────────────────────────────────────────
 # 2. TUNED MODEL (with hyperparameter tuning)
@@ -47,9 +43,8 @@ def train_linear_regression_base():
 def train_linear_regression_tuned():
     X_train, y_train, X_test, y_test, meta_test = load_model_data()
 
-    # Define hyperparameter grid for Ridge and Lasso
+    # Define hyperparameter grid for Ridge
     param_grid_ridge = {"alpha": [0.1, 1.0, 10.0]}
-    param_grid_lasso = {"alpha": [0.001, 0.01, 0.1]}
 
     # Tune Ridge Regression
     ridge_model = Ridge(random_state=SEED)
@@ -58,57 +53,47 @@ def train_linear_regression_tuned():
 
     best_ridge = ridge_search.best_estimator_
 
-    # Tune Lasso Regression
-    lasso_model = Lasso(random_state=SEED)
-    lasso_search = GridSearchCV(lasso_model, param_grid_lasso, cv=5, scoring='neg_mean_squared_error')
-    lasso_search.fit(X_train, y_train)
-    best_lasso = lasso_search.best_estimator_
-
     # Evaluate on the held-out (most recent) test dates
     train_pred_ridge = best_ridge.predict(X_train)
     test_pred_ridge = best_ridge.predict(X_test)
-    train_pred_lasso = best_lasso.predict(X_train)
-    test_pred_lasso = best_lasso.predict(X_test)
+
     results = {
         "ridge": {
             "best_params": ridge_search.best_params_,
             "train_metrics": evaluate_model(y_train, train_pred_ridge),
             "test_metrics": evaluate_model(y_test, test_pred_ridge)
-        },
-        "lasso": {
-            "best_params": lasso_search.best_params_,
-            "train_metrics": evaluate_model(y_train, train_pred_lasso),
-            "test_metrics": evaluate_model(y_test, test_pred_lasso)
         }
     }
-    return results
-
-def save_model(model, model_name):
-    model_dir = os.path.join(model_output_dir, model_name)
-    os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, f"{model_name}.joblib")
-    joblib.dump(model, model_path)
-    print(f"Model saved to {model_path}")
-
-def save_results(results, model_name):
-    results_dir = os.path.join(model_output_dir, model_name)
-    os.makedirs(results_dir, exist_ok=True)
-    results_path = os.path.join(results_dir, f"{model_name}_results.json")
-    with open(results_path, 'w') as f:
-        json.dump(results, f, indent=4)
-    print(f"Results saved to {results_path}")
+    return results, {"ridge": best_ridge}
 
 def main():
-    # Train and evaluate base models
-    base_results = train_linear_regression_base()
-    save_results(base_results, "linear_regression_base")
-
-    # Train and evaluate tuned models
-    tuned_results = train_linear_regression_tuned()
-    save_results(tuned_results, "linear_regression_tuned")
+    # Train base and tuned models
+    base_results, base_models = train_linear_regression_base()
+    tuned_results, tuned_models = train_linear_regression_tuned()
 
     # Compare default vs tuned models
-    default_vs_tuned_model_comparison(base_results, tuned_results)
+    compare_model_results(base_results, tuned_results)
+
+    # Save results and models
+    save_results(base_results, "linear_regression_base", OUTPUT_DIR)
+    save_model(base_models["ridge"], "ridge_base", OUTPUT_DIR)
+    save_results(tuned_results, "linear_regression_tuned", OUTPUT_DIR)
+    save_model(tuned_models["ridge"], "ridge_tuned", OUTPUT_DIR)
+
+    # Plots for the tuned model
+    X_train, y_train, X_test, y_test, _ = load_model_data()
+    feature_names = list(X_train.columns) if hasattr(X_train, "columns") else None
+    best_ridge = tuned_models["ridge"]
+
+    # Model file used by the dashboard
+    save_model({"model": best_ridge, "features": feature_names}, "linear_regression_model", MODEL_DIR)
+
+    generate_model_plots(
+        best_ridge, "ridge_tuned", X_train, y_train, X_test, y_test, OUTPUT_DIR,
+        feature_names=feature_names,
+        importances=np.abs(best_ridge.coef_),          # |coefficient| as importance
+        validation_param=("alpha", [0.01, 0.1, 1.0, 10.0, 100.0]),
+    )
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,15 @@
+import json
+import os
+
+import joblib
+import matplotlib
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from importlib.resources import path
+from sklearn.base import clone
+from sklearn.inspection import permutation_importance
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from sklearn.model_selection import learning_curve, validation_curve
 
 # ─────────────────────────────────────────────
 # 1. EVALUATION METRICS (MAE, MSE, RMSE, R², MAPE, Bias)
@@ -58,6 +65,18 @@ def default_vs_tuned_model_comparison(y_true, y_pred_default, y_pred_tuned):
         'Tuned Model': list(metrics_tuned.values())
     })
     
+    return comparison_df
+
+def compare_model_results(base_results, tuned_results, split="test_metrics"):
+    # base_results / tuned_results are the dicts returned by the train_*_base / train_*_tuned functions
+    # Rows = metrics, columns = each model's default and tuned versions
+    data = {}
+    for model_name in base_results:
+        data[f"{model_name} (Default)"] = base_results[model_name][split]
+        data[f"{model_name} (Tuned)"] = tuned_results[model_name][split]
+    comparison_df = pd.DataFrame(data)
+    comparison_df.index.name = "Metric"
+    print(comparison_df.to_string())
     return comparison_df
 
 # ─────────────────────────────────────────────
@@ -124,6 +143,8 @@ def training_validation_curve_plot(param_range, train_scores, val_scores, param_
                     np.mean(train_scores, axis=1) + np.std(train_scores, axis=1), alpha=0.1, color='r')
     ax.fill_between(param_range, np.mean(val_scores, axis=1) - np.std(val_scores, axis=1),
                     np.mean(val_scores, axis=1) + np.std(val_scores, axis=1), alpha=0.1, color='g')
+    if min(param_range) > 0 and max(param_range) / min(param_range) >= 100:
+        ax.set_xscale('log')
     ax.set_xlabel(param_name)
     ax.set_ylabel('Score')
     ax.set_title(f'Training and Validation Curve for {param_name}')
@@ -133,7 +154,8 @@ def training_validation_curve_plot(param_range, train_scores, val_scores, param_
 def loss_curve_plot(train_losses, val_losses):
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(train_losses, label='Training Loss', color='r')
-    ax.plot(val_losses, label='Validation Loss', color='g')
+    if val_losses is not None:
+        ax.plot(val_losses, label='Validation Loss', color='g')
     ax.set_xlabel('Epochs')
     ax.set_ylabel('Loss')
     ax.set_title('Loss Curve')
@@ -166,3 +188,80 @@ def save_plot(fig, filename):
     fig.tight_layout()
     fig.savefig(filename, dpi=120)
     plt.close(fig)
+
+def save_model(model, model_name, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    model_path = os.path.join(output_dir, f"{model_name}.joblib")
+    joblib.dump(model, model_path)
+    print(f"Model saved to {model_path}")
+
+def save_results(results, model_name, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    results_path = os.path.join(output_dir, f"{model_name}_results.json")
+    with open(results_path, 'w') as f:
+        json.dump(results, f, indent=4)
+    print(f"Results saved to {results_path}")
+
+def generate_model_plots(model, model_name, X_train, y_train, X_test, y_test, output_dir,
+                         feature_names=None, importances=None, loss_curves=None,
+                         validation_param=None):
+    """
+    Create and save every applicable evaluation plot for one fitted regression model.
+      importances      : built-in importances/coefficients (tree models, linear models), or None
+      loss_curves      : (train_losses, val_losses_or_None) for models trained iteratively, or None
+      validation_param : (param_name, param_range) for the training/validation curve, or None
+    A failure in one plot is reported and skipped so the others still get saved.
+    (confusion_matrix_plot is for classification, so it is not used for these regression models.)
+    """
+    matplotlib.use("Agg")  # save to files only, no GUI windows
+    os.makedirs(output_dir, exist_ok=True)
+
+    y_true = np.asarray(y_test)
+    y_pred = np.asarray(model.predict(X_test))
+    if feature_names is None:
+        feature_names = [f"feature_{i}" for i in range(np.asarray(X_train).shape[1])]
+    feature_names = np.array(feature_names)
+
+    def top_n(values, n=20):
+        values = np.asarray(values)
+        idx = np.argsort(values)[::-1][:n]
+        return values[idx], feature_names[idx]
+
+    def make(suffix, build):
+        try:
+            fig, _ = build()
+            path = os.path.join(output_dir, f"{model_name}_{suffix}.png")
+            save_plot(fig, path)
+            print(f"Plot saved to {path}")
+        except Exception as e:
+            plt.close("all")
+            print(f"[WARN] Could not create {suffix} plot for {model_name}: {e}")
+
+    make("actual_vs_predicted", lambda: actual_vs_predicted_plot(y_true, y_pred))
+    make("residuals", lambda: residuals_plot(y_true, y_pred))
+
+    if importances is not None:
+        make("feature_importance", lambda: feature_importance_plot(*top_n(importances)))
+
+    def perm_plot():
+        perm = permutation_importance(model, X_test, y_test, n_repeats=5, random_state=42,
+                                      scoring="neg_mean_squared_error", n_jobs=1)
+        return permutation_importance_plot(*top_n(perm.importances_mean))
+    make("permutation_importance", perm_plot)
+
+    def lc_plot():
+        sizes, tr, te = learning_curve(clone(model), X_train, y_train, cv=3, scoring="r2",
+                                       train_sizes=np.linspace(0.2, 1.0, 5), n_jobs=1)
+        return plot_learning_curve(sizes, tr, te)
+    make("learning_curve", lc_plot)
+
+    if validation_param is not None:
+        name, values = validation_param
+        def vc_plot():
+            tr, te = validation_curve(clone(model), X_train, y_train, param_name=name,
+                                      param_range=values, cv=3, scoring="r2", n_jobs=1)
+            return training_validation_curve_plot(values, tr, te, name)
+        make(f"validation_curve_{name}", vc_plot)
+
+    if loss_curves is not None:
+        make("loss_curve", lambda: loss_curve_plot(*loss_curves))

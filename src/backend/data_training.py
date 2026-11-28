@@ -1,7 +1,7 @@
-from model.linear_regression.linear_regression_model import train_linear_regression
-from model.mlp.mlp_model import train_mlp
-from model.random_forest.random_forest_model import train_random_forest
-from model.xgboost.xgboost_model import train_xgboost
+from model.linear_regression.linear_regression_model import main as train_linear_regression
+from model.mlp.mlp_model import main as train_mlp
+from model.xgboost.xgboost_model import main as train_xgboost
+from model.random_forest.random_forest_model import main as train_random_forest
 
 LINE = "─" * 45
 

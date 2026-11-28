@@ -62,6 +62,12 @@ def build_inputs(**v) -> pd.DataFrame:
     return pd.DataFrame([row])[FEATURES]
 
 
+def predict_values(model: LoadedModel, value_sets) -> np.ndarray:
+    """Predictions for several scenarios at once (each a dict of the build_inputs form values)."""
+    rows = pd.concat([build_inputs(**v) for v in value_sets], ignore_index=True)
+    return model.predict(encode(rows))
+
+
 def encode(df_processed: pd.DataFrame) -> pd.DataFrame:
     """Scale / one-hot rows with the preprocessor saved by the pipeline (so they match the training rows)."""
     return load_preprocessor().transform(df_processed[FEATURES])

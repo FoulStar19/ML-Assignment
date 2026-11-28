@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from .config import DATE_COL, PROCESSED_FILE, STOCK_COLS, TARGET, TEST_FILE, TRAIN_FILE, get_feature_columns
+from . import recommender as rec
+from .config import DATE_COL, PROCESSED_FILE, RAW_FILE, STOCK_COLS, TARGET, TEST_FILE, TRAIN_FILE, get_feature_columns
 
 
 def missing_data_files():
@@ -16,6 +17,34 @@ def load_processed():
     return pd.read_csv(PROCESSED_FILE, parse_dates=[DATE_COL])
 
 
+@st.cache_data(show_spinner="Loading raw data...")
+def load_raw():
+    """The raw dataset with every original column (None if the file is missing)."""
+    if not RAW_FILE.exists():
+        return None
+    df = pd.read_csv(RAW_FILE)
+    df[DATE_COL] = pd.to_datetime(df[DATE_COL], errors="coerce", format="mixed")
+    for col in ("Shipping_Time", "Sales_Amount", "Units_Sold", "Returns"):
+        if col in df:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+@st.cache_data
+def lead_by_category():
+    """Median Shipping_Time (days) of each product category, used for what-if scenarios."""
+    raw = load_raw()
+    if raw is None or "Shipping_Time" not in raw:
+        return {}
+    return raw.groupby("Product_Category")["Shipping_Time"].median().to_dict()
+
+
+@st.cache_data
+def abc_xyz_table():
+    """ABC (revenue) and XYZ (demand variability) class of every product, from all processed records."""
+    return rec.abc_xyz(load_processed())
+
+
 @st.cache_data(show_spinner="Loading test period...")
 def load_test(_mtime):
     """The held-out test rows: readable details (meta), encoded model inputs (X) and the actual Units_Sold (y)."""
@@ -23,6 +52,9 @@ def load_test(_mtime):
     labels = (load_processed()[["Transaction_ID", "Product_Category", "Product_Subcategory", "Store_Type"]]
               .drop_duplicates("Transaction_ID"))
     meta = test[[DATE_COL] + STOCK_COLS].merge(labels, on="Transaction_ID", how="left")
+    raw = load_raw()
+    if raw is not None and "Shipping_Time" in raw:                       # lead time of each record
+        meta = meta.merge(raw[["Transaction_ID", "Shipping_Time"]].drop_duplicates("Transaction_ID"), on="Transaction_ID", how="left")
     return meta, test[get_feature_columns(test)], test[TARGET]
 
 

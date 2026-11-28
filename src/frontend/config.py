@@ -14,6 +14,7 @@ from data_modeling import DATE_COL, FEATURES, STOCK_COLS, TARGET, get_feature_co
 TRAIN_FILE, TEST_FILE, PREPROCESSOR_FILE = Path(_dm.TRAIN_FILE), Path(_dm.TEST_FILE), Path(_dm.PREPROCESSOR_FILE)
 
 PROCESSED_FILE = ROOT_DIR / "data" / "processed" / "retail_store_inventory_processed.csv"
+RAW_FILE = ROOT_DIR / "data" / "raw" / "retail_sales_forecast_dataset.csv"   # used for the data explorer and Shipping_Time
 MODEL_DIR = ROOT_DIR / "model"
 
 
@@ -32,10 +33,13 @@ MODELS = [
 ]
 
 # Default inventory rules (all adjustable in the sidebar)
-UNDERSTOCK_DAYS = 14     # stock covers fewer days of predicted demand than this -> understocking
+SERVICE_LEVEL = 95       # % chance of not running out while waiting for a delivery (sets the safety stock)
+LEAD_DAYS = 4            # fixed lead time (days) when Shipping_Time is not used; 4 is the median Shipping_Time
+REVIEW_DAYS = 7          # extra days of demand the stock must also cover after the lead time
+TARGET_DAYS = 21         # replenish up to this many days of demand (plus safety stock)
 OVERSTOCK_DAYS = 40      # stock covers more days than this -> overstocking
-TARGET_DAYS = 21         # replenish up to / trim down to this many days of cover
 HIGH_DEMAND_PCT = 90     # "high demand" = predicted units above this percentile of past sales
+ABC_CUTS = (0.70, 0.90)  # ABC classes: items making up the first 70% / next 20% / last 10% of revenue
 
 STATUS_COLORS = {"Understocking": "#d62728", "Overstocking": "#ff7f0e", "Sufficient stock": "#2ca02c"}
 STATUS_ICONS = {"Understocking": "🔴", "Overstocking": "🟠", "Sufficient stock": "🟢"}

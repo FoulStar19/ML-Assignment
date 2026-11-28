@@ -11,6 +11,8 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from sklearn.model_selection import learning_curve, validation_curve
 
+LINE = "─" * 45
+
 # ─────────────────────────────────────────────
 # 1. EVALUATION METRICS (MAE, MSE, RMSE, R², MAPE, Bias)
 # ─────────────────────────────────────────────
@@ -43,6 +45,7 @@ def evaluate_model(y_true, y_pred):
     }
 
 def print_evaluation_metrics(metrics):
+    print(LINE)
     print("Model Evaluation Metrics:")
     print(f"Mean Absolute Error (MAE): {metrics['MAE']:.4f}")
     print(f"Mean Squared Error (MSE): {metrics['MSE']:.4f}")
@@ -50,6 +53,7 @@ def print_evaluation_metrics(metrics):
     print(f"R² Score: {metrics['R²']:.4f}")
     print(f"Mean Absolute Percentage Error (MAPE): {metrics['MAPE']:.2f}%")
     print(f"Bias: {metrics['Bias']:.4f}")
+    print(LINE + "\n")
 
 def default_vs_tuned_model_comparison(y_true, y_pred_default, y_pred_tuned):
     # Evaluate default model
@@ -205,14 +209,7 @@ def save_results(results, model_name, output_dir):
 def generate_model_plots(model, model_name, X_train, y_train, X_test, y_test, output_dir,
                          feature_names=None, importances=None, loss_curves=None,
                          validation_param=None):
-    """
-    Create and save every applicable evaluation plot for one fitted regression model.
-      importances      : built-in importances/coefficients (tree models, linear models), or None
-      loss_curves      : (train_losses, val_losses_or_None) for models trained iteratively, or None
-      validation_param : (param_name, param_range) for the training/validation curve, or None
-    A failure in one plot is reported and skipped so the others still get saved.
-    (confusion_matrix_plot is for classification, so it is not used for these regression models.)
-    """
+    
     matplotlib.use("Agg")  # save to files only, no GUI windows
     os.makedirs(output_dir, exist_ok=True)
 

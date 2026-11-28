@@ -1,4 +1,3 @@
-"""Altair charts (Altair ships with Streamlit). Each function returns a chart; the dashboard draws it."""
 import altair as alt
 import pandas as pd
 

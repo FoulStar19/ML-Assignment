@@ -11,12 +11,12 @@ from data_transforming import DATE_COL, TARGET, FLAG_COLS, NUM_COLS, CAT_COLS, S
 LINE = "─" * 45
 
 # ─────────────────────────────────────────────
-# 0. SETTINGS (column names come from data_transforming)
+# 0. SETTINGS 
 # ─────────────────────────────────────────────
-FEATURES = FLAG_COLS + NUM_COLS + CAT_COLS  # the 13 model features (raw columns, before encoding)
-NON_FEATURE_COLS = [TARGET, DATE_COL] + STOCK_COLS   # in train.csv / test.csv but never given to a model
-TEST_FRACTION = 0.30                        # most recent 30% of dates
-SEED = 42                                   # random seed used by every model
+FEATURES = FLAG_COLS + NUM_COLS + CAT_COLS          # the 13 model features (raw columns, before encoding)
+NON_FEATURE_COLS = [TARGET, DATE_COL] + STOCK_COLS  # in train.csv / test.csv but never given to a model
+TEST_FRACTION = 0.30                                # most recent 30% of dates
+SEED = 42                                           # random seed used by every model
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_DATA_DIR = os.path.join(ROOT_DIR, "data", "processed")
@@ -26,12 +26,11 @@ PREPROCESSOR_FILE = os.path.join(MODEL_DATA_DIR, "preprocessor.joblib")
 
 
 def model_output_dir(model_name):
-    """Where a model writes its results: <project>/model/<model_name>/outputs (e.g. model_output_dir("xgboost"))."""
     return os.path.join(ROOT_DIR, "model", model_name, "outputs")
 
 
 # ─────────────────────────────────────────────
-# 4. DATA MODELING (prepare the data, no training)
+# 4. DATA MODELING 
 # ─────────────────────────────────────────────
 def data_model(processed_data_file):
 
@@ -85,13 +84,9 @@ def data_model(processed_data_file):
 
 
 # ─────────────────────────────────────────────
-# 5. LOAD THE PREPARED DATA (used by every model script)
+# 5. LOAD THE PREPARED DATA 
 # ─────────────────────────────────────────────
 def load_train_test():
-    """Read train.csv / test.csv (Date parsed) and check the split is a clean, ordered time split.
-
-    Returns the two full DataFrames: model inputs + Units_Sold + Date + ID/stock columns.
-    """
     for f in (TRAIN_FILE, TEST_FILE):
         if not os.path.exists(f):
             raise FileNotFoundError(f"{f} not found; run `python pipeline.py --skip-training` first.")
@@ -108,17 +103,10 @@ def load_train_test():
 
 
 def get_feature_columns(df):
-    """The model inputs: every column that is not the target, the date or an ID/stock column."""
     return [c for c in df.columns if c not in NON_FEATURE_COLS]
 
 
 def load_model_data():
-    """train.csv / test.csv split into what a model may see and what it may not.
-
-    Returns X_train, y_train, X_test, y_test (model inputs and Units_Sold) and meta_test
-    (Date, Transaction_ID, Store_ID, Product_ID, Inventory_Level of the test rows, for error
-    analysis and the recommender). ID, date and stock columns never reach the models.
-    """
     train, test = load_train_test()
     features = get_feature_columns(train)
     return (train[features], train[TARGET],

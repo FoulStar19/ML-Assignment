@@ -15,7 +15,6 @@ from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.dummy import DummyRegressor
 from sklearn.inspection import permutation_importance
-from sklearn.linear_model import LinearRegression
 from sklearn.metrics import (mean_absolute_error, mean_squared_error, median_absolute_error,
                              r2_score)
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit, cross_validate
@@ -45,15 +44,15 @@ REPORT_DIR = Path(__file__).resolve().parent / "outputs"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 TARGET = "Units_Sold"
-# Same exclusions as the linear baseline (Inventory_Level is kept for the recommender).
-NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]
+# Not model inputs (Inventory_Level is kept for the recommender).
+NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Store_ID", "Product_ID", "Inventory_Level"]
 
-N_SPLITS = 5            # time-ordered CV folds (same as the linear baseline)
-N_ITER_SEARCH = 25      # random-search budget (training a network is slower, so random > grid)
+N_SPLITS = 5            # time-ordered CV folds
+N_ITER_SEARCH = 30      # random-search budget (training a network is slower, so random > grid)
 N_ENSEMBLE = 5          # MLPs with different seeds averaged together (Part B.2)
 N_BOOTSTRAP = 500       # resamples for the confidence intervals on test error
 GROUP_PREFIXES = ["Product_Category_", "Store_Type_", "Weather_Condition_"]
-PDP_FEATURES = ["Unit_Price", "Customer_Footfall", "Marketing_Spend", "Month"]   # curves to draw
+PDP_FEATURES = ["Log_Effective_Price", "Unit_Price", "Customer_Footfall", "Marketing_Spend", "Month"]   # curves to draw
 
 
 # ─────────────────────────────────────────────
@@ -64,7 +63,7 @@ def load_split(path):
     if not os.path.exists(path):
         raise FileNotFoundError(f"{path} not found - run pipeline.py first")
     df = pd.read_csv(path)
-    return df.drop(columns=NON_FEATURES), df[TARGET], df["Date"]
+    return df.drop(columns=NON_FEATURES, errors="ignore"), df[TARGET], df["Date"]
 
 
 def decode_group(X, prefix):
@@ -74,7 +73,7 @@ def decode_group(X, prefix):
 
 
 def score_all(y_true, y_pred):
-    """Regression metrics (identical to the linear baseline). Predictions are clipped at 0."""
+    """Regression metrics. Predictions are clipped at 0."""
     y_pred = np.clip(np.asarray(y_pred, dtype=float), 0, None)
     y_true = np.asarray(y_true, dtype=float)
     return {
@@ -144,7 +143,7 @@ def cv_scores(model, X, y, cv):
 
 def partial_dependence(model, X, col, n=12):
     """Average prediction as ONE input is moved across its range while all other inputs keep their
-    real values. Shows the SHAPE of the effect (a straight line for linear models, curves for MLP)."""
+    real values. Shows the SHAPE of the effect."""
     grid = np.unique(np.percentile(X[col], np.linspace(5, 95, n)))
     curve = []
     for v in grid:
@@ -161,7 +160,7 @@ def train_mlp():
     np.random.seed(SEED)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load the prepared data (same files as the linear baseline)
+    # 1. Load the prepared data
     print(LINE)
     print("1. Data")
     X_train, y_train, date_train = load_split(TRAIN_FILE)
@@ -178,19 +177,13 @@ def train_mlp():
 
     cv = TimeSeriesSplit(n_splits=N_SPLITS)    # always validate on dates AFTER the training dates
 
-    # 2. Reference points: "no learning" and the linear baseline the MLP must beat
+    # 2. Reference point: "no learning" (always predict the training mean)
     print(LINE)
-    print("2. Reference points")
+    print("2. Reference point")
     dummy = DummyRegressor(strategy="mean").fit(X_train, y_train)
-    ols = LinearRegression().fit(X_train, y_train)
-    ols_pred = np.clip(ols.predict(X_test), 0, None)
-    ref = {"dummy_mean": score_all(y_test, dummy.predict(X_test)),
-           "linear_regression_baseline": score_all(y_test, ols_pred)}
-    ols_cv = cv_scores(LinearRegression(), X_train, y_train, cv)
-    print(f"Mean-only dummy       : RMSE {ref['dummy_mean']['RMSE']:.2f}, R2 {ref['dummy_mean']['R2']:.3f}")
-    print(f"Linear regression (V0): RMSE {ref['linear_regression_baseline']['RMSE']:.2f}, "
-          f"R2 {ref['linear_regression_baseline']['R2']:.3f}  (CV RMSE {ols_cv['cv_RMSE']:.2f})")
-    print("The MLP must clearly beat the linear model to justify its extra complexity.")
+    dummy_scores = score_all(y_test, dummy.predict(X_test))
+    print(f"Mean-only dummy: MAE {dummy_scores['MAE']:.2f}, RMSE {dummy_scores['RMSE']:.2f}, R2 {dummy_scores['R2']:.3f}")
+    print("The MLP must clearly beat this. The 4-model comparison is done in Student C's evaluation.")
     print(LINE + "\n")
 
     # 3. Iterate (A.5 / A.6): one change at a time, judged by CV on TRAIN only
@@ -202,8 +195,7 @@ def train_mlp():
         "V2 (64,32) + log + standardised target": make_model((64, 32), target="log"),
         "V3 (128,64) + standardised target": make_model((128, 64), target="standard"),
     }
-    rows = [{"variant": "Linear regression (reference)", **ols_cv}]
-    rows += [{"variant": n, **cv_scores(m, X_train, y_train, cv)} for n, m in variants.items()]
+    rows = [{"variant": n, **cv_scores(m, X_train, y_train, cv)} for n, m in variants.items()]
     exp = pd.DataFrame(rows).round(4)
     print(exp.to_string(index=False))
     exp.to_csv(REPORT_DIR / "experiments_cv.csv", index=False)
@@ -213,25 +205,44 @@ def train_mlp():
     print(f"Target representation chosen by CV: {target_mode}")
     print(LINE + "\n")
 
-    # 4. Part B.1 - automatic random search over architecture, regularisation and learning settings
+    # 4. Part B.1 - tuning, shown BEFORE vs AFTER
     print(LINE)
     print("4. Hyper-parameter tuning (RandomizedSearchCV, TimeSeriesSplit)")
+    # BEFORE = scikit-learn's own default settings (same target scaling, so only the settings differ)
+    before_p = {"hidden_layer_sizes": (100,), "activation": "relu", "alpha": 1e-4,
+                "learning_rate_init": 1e-3, "batch_size": 200, "n_iter_no_change": 15}
+    mk_before = lambda: make_model((100,), "relu", 1e-4, 1e-3, 200, target=target_mode)
+    before = mk_before().fit(X_train, y_train)
+    before_cv = cv_scores(mk_before(), X_train, y_train, cv)
+    # AFTER = random search over a wider space: more architectures, a much wider L2 range (alpha),
+    # wider learning-rate range, more batch sizes and the early-stopping patience.
     space = {
-        "regressor__hidden_layer_sizes": [(64,), (128,), (64, 32), (128, 64), (128, 64, 32), (256, 128)],
+        "regressor__hidden_layer_sizes": [(32,), (64,), (128,), (256,), (64, 32), (128, 64), (256, 128),
+                                          (128, 64, 32), (256, 128, 64)],
         "regressor__activation": ["relu", "tanh"],
-        "regressor__alpha": loguniform(1e-5, 1e0),            # L2 penalty: bigger = simpler network
-        "regressor__learning_rate_init": loguniform(1e-4, 1e-2),
-        "regressor__batch_size": [64, 128, 256],
+        "regressor__alpha": loguniform(1e-5, 1e1),            # L2 penalty: bigger = simpler network
+        "regressor__learning_rate_init": loguniform(1e-4, 3e-2),
+        "regressor__batch_size": [32, 64, 128, 256],
+        "regressor__n_iter_no_change": [10, 15, 25],
     }
     search = RandomizedSearchCV(make_model(target=target_mode), space, n_iter=N_ITER_SEARCH, cv=cv,
                                 scoring="neg_root_mean_squared_error", n_jobs=-1, random_state=SEED, refit=True)
     search.fit(X_train, y_train)
     best_params = {k.replace("regressor__", ""): v for k, v in search.best_params_.items()}
+    trials = pd.DataFrame(search.cv_results_)
+    trials["cv_RMSE"] = -trials["mean_test_score"]
+    trials = trials.rename(columns=lambda c: c.replace("param_regressor__", ""))
+    trials = trials[list(best_params) + ["cv_RMSE", "std_test_score", "rank_test_score"]].sort_values("rank_test_score")
+    trials.to_csv(REPORT_DIR / "tuning_trials.csv", index=False)
+    hp = pd.DataFrame({"before_tuning": {k: str(v) for k, v in before_p.items()},
+                       "after_tuning": {k: (f"{v:.6g}" if isinstance(v, float) else str(v)) for k, v in best_params.items()}})
+    hp.to_csv(REPORT_DIR / "hyperparameters_before_after.csv")
     print(f"Candidates tried : {N_ITER_SEARCH} (x {N_SPLITS} folds)")
-    print(f"Best CV RMSE     : {-search.best_score_:.3f}  (linear baseline CV RMSE: {ols_cv['cv_RMSE']:.3f})")
-    print(f"Best settings    : { {k: (round(float(v), 6) if isinstance(v, float) else v) for k, v in best_params.items()} }")
-    top = pd.DataFrame(search.cv_results_).sort_values("rank_test_score").head(5)
-    print("Top-5 CV RMSE    :", (-top["mean_test_score"]).round(3).tolist())
+    print("\nSettings BEFORE vs AFTER tuning:")
+    print(hp.to_string())
+    print(f"\nCV RMSE before tuning: {before_cv['cv_RMSE']:.3f} (+/- {before_cv['cv_RMSE_std']:.3f}) -> "
+          f"after tuning: {-search.best_score_:.3f}")
+    print("Top-5 CV RMSE    :", trials["cv_RMSE"].head(5).round(3).tolist())
     print(LINE + "\n")
 
     # 5. Part B.2 - ensemble of MLPs with different random seeds
@@ -250,10 +261,21 @@ def train_mlp():
     # 6. Final evaluation on the held-out LATEST dates (used once)
     print(LINE)
     print("6. Evaluation (test set = most recent dates)")
-    results = {**ref, "mlp_single": score_all(y_test, single_pred), "mlp_ensemble": score_all(y_test, ens_pred)}
+    before_pred = np.clip(before.predict(X_test), 0, None)
+    results = {"dummy_mean": dummy_scores, "mlp_before_tuning": score_all(y_test, before_pred),
+               "mlp_after_tuning": score_all(y_test, single_pred), "mlp_ensemble": score_all(y_test, ens_pred)}
     cmp = pd.DataFrame(results).T.round(4)
     print(cmp.to_string())
     cmp.to_csv(REPORT_DIR / "test_metrics_comparison.csv")
+    ba = pd.DataFrame({"before tuning": results["mlp_before_tuning"], "after tuning (single)": results["mlp_after_tuning"],
+                       "after tuning (ensemble)": results["mlp_ensemble"]}).T[["MAE", "RMSE", "R2"]].round(4)
+    ba.to_csv(REPORT_DIR / "before_vs_after_tuning.csv")
+    b, a = results["mlp_before_tuning"], results["mlp_ensemble"]
+    print("\nBEFORE vs AFTER tuning (test set):")
+    print(ba.to_string())
+    print(f"RMSE {b['RMSE']:.3f} -> {a['RMSE']:.3f} ({100 * (b['RMSE'] - a['RMSE']) / b['RMSE']:.1f}% lower) | "
+          f"MAE {b['MAE']:.3f} -> {a['MAE']:.3f} ({100 * (b['MAE'] - a['MAE']) / b['MAE']:.1f}% lower) | "
+          f"R2 {b['R2']:.3f} -> {a['R2']:.3f}")
     # final model = whichever of single / ensemble has the lower CV-independent test RMSE is NOT used to
     # choose (that would peek at the test set): the ensemble is the default because averaging never
     # increases the expected error and makes the result less seed-dependent.
@@ -263,22 +285,22 @@ def train_mlp():
     print(f"\nFinal model ({final_name}): off by {f['MAE']:.1f} units on average (mean sales {yt.mean():.1f}), "
           f"R2 {f['R2']:.3f}")
 
-    # Bootstrap CI for the MLP's RMSE, and a PAIRED bootstrap of MLP vs linear on the same resampled rows
+    # Bootstrap CI for the MLP's RMSE, and a PAIRED bootstrap of before vs after tuning on the same resampled rows
     rng = np.random.default_rng(SEED)
     boot_rmse, boot_diff = [], []
     for _ in range(N_BOOTSTRAP):
         idx = rng.integers(0, len(yt), len(yt))
         r_m = np.sqrt(np.mean((yt[idx] - final_pred[idx]) ** 2))
-        r_l = np.sqrt(np.mean((yt[idx] - ols_pred[idx]) ** 2))
+        r_l = np.sqrt(np.mean((yt[idx] - before_pred[idx]) ** 2))
         boot_rmse.append(r_m)
-        boot_diff.append(r_l - r_m)                      # positive = MLP better
+        boot_diff.append(r_l - r_m)                      # positive = tuned MLP better
     lo, hi = np.percentile(boot_rmse, [2.5, 97.5])
     dlo, dhi = np.percentile(boot_diff, [2.5, 97.5])
     print(f"Bootstrap 95% CI for MLP RMSE: [{lo:.3f}, {hi:.3f}]")
-    print(f"Paired bootstrap, RMSE(linear) - RMSE(MLP): mean {np.mean(boot_diff):+.3f}, 95% CI [{dlo:.3f}, {dhi:.3f}]")
-    verdict = ("the MLP is significantly better than the linear baseline" if dlo > 0 else
-               "the MLP is significantly WORSE than the linear baseline" if dhi < 0 else
-               "the difference is NOT statistically significant")
+    print(f"Paired bootstrap, RMSE(before) - RMSE(after): mean {np.mean(boot_diff):+.3f}, 95% CI [{dlo:.3f}, {dhi:.3f}]")
+    verdict = ("tuning gives a significant improvement" if dlo > 0 else
+               "tuning made the MLP significantly WORSE" if dhi < 0 else
+               "the tuning gain is NOT statistically significant")
     print(f"-> {verdict} (interval {'excludes' if dlo > 0 or dhi < 0 else 'includes'} 0).")
     print(LINE + "\n")
 
@@ -314,11 +336,8 @@ def train_mlp():
     print(imp.head(8).round(3).to_string())
     pdps = {}
     for col in [c for c in PDP_FEATURES if c in cols]:
-        g, c_mlp = partial_dependence(ens, X_test, col)
-        _, c_lin = partial_dependence(ols, X_test, col)
-        pdps[col] = (g, c_mlp, c_lin)
-    print("Partial-dependence curves saved: a straight MLP curve = the effect is linear; a bend = the MLP found")
-    print("non-linear behaviour that the linear baseline cannot represent.")
+        pdps[col] = partial_dependence(ens, X_test, col)
+    print("Partial-dependence curves saved: they show the SHAPE of each effect (straight = linear, bend = non-linear).")
     print(LINE + "\n")
 
     # 9. Error analysis (A.4)
@@ -340,21 +359,18 @@ def train_mlp():
         for val in sorted(label.unique()):
             m = (label == val).to_numpy()
             if m.sum() >= 30:                                   # tiny groups are too noisy
-                s, sl = score_all(yt[m], final_pred[m]), score_all(yt[m], ols_pred[m])
+                s = score_all(yt[m], final_pred[m])
                 slices.append({"slice": prefix.rstrip("_"), "value": val, "rows": int(m.sum()),
-                               "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"],
-                               "linear_MAE": sl["MAE"], "MAE_gain_vs_linear": sl["MAE"] - s["MAE"]})
+                               "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"]})
     dts = pd.to_datetime(date_test).reset_index(drop=True)
     for i, chunk in enumerate(np.array_split(np.arange(len(dts)), 3), 1):   # 3 chronological periods
-        s, sl = score_all(yt[chunk], final_pred[chunk]), score_all(yt[chunk], ols_pred[chunk])
+        s = score_all(yt[chunk], final_pred[chunk])
         slices.append({"slice": "Time period", "value": f"T{i}: {dts[chunk[0]].date()} to {dts[chunk[-1]].date()}",
-                       "rows": len(chunk), "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"],
-                       "linear_MAE": sl["MAE"], "MAE_gain_vs_linear": sl["MAE"] - s["MAE"]})
+                       "rows": len(chunk), "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"]})
     rob = pd.DataFrame(slices).round(3)
     rob.to_csv(REPORT_DIR / "robustness_by_slice.csv", index=False)
-    print("\nRobustness by slice (MAE_gain_vs_linear > 0 = the MLP is better there):")
+    print("\nRobustness by slice (large gaps = weak spots):")
     print(rob.to_string(index=False))
-    print(f"The MLP beats the linear model in {int((rob.MAE_gain_vs_linear > 0).sum())} of {len(rob)} slices.")
 
     worst = pd.DataFrame({"Date": date_test.values, "Actual": yt, "Predicted": final_pred.round(1),
                           "AbsError": np.abs(resid).round(1)}).sort_values("AbsError", ascending=False)
@@ -363,33 +379,32 @@ def train_mlp():
     # Row-level predictions for Student C (evaluation) and Student D (UI / recommender)
     pd.DataFrame({"Date": date_test.values, "Actual_Units": yt, "Predicted_Units": final_pred.round(2),
                   "Error": (final_pred - yt).round(2),
-                  "Predicted_Units_Linear": ols_pred.round(2)}).to_csv(REPORT_DIR / "test_predictions.csv", index=False)
+                  "Predicted_Units_Before_Tuning": before_pred.round(2)}).to_csv(REPORT_DIR / "test_predictions.csv", index=False)
     print(LINE + "\n")
 
     # 10. Plots
     print(LINE)
     print("10. Plots")
-    _save_plots(ens, yt, final_pred, resid, imp, results, pdps, lc)
+    _save_plots(ens, yt, final_pred, resid, imp, results, pdps, lc, trials, before_cv)
     print(f"Saved to {REPORT_DIR}")
     print(LINE + "\n")
 
     # 11. Shortlist summary + save (A.7)
     print(LINE)
     print("11. Summary and saving")
-    base_r = results["linear_regression_baseline"]
-    print(f"Linear baseline : RMSE {base_r['RMSE']:.3f} | MAE {base_r['MAE']:.3f} | R2 {base_r['R2']:.3f}")
-    print(f"MLP ensemble    : RMSE {f['RMSE']:.3f} | MAE {f['MAE']:.3f} | R2 {f['R2']:.3f}  "
-          f"(RMSE change {f['RMSE'] - base_r['RMSE']:+.3f})")
+    print(f"Before tuning : RMSE {b['RMSE']:.3f} | MAE {b['MAE']:.3f} | R2 {b['R2']:.3f}")
+    print(f"After tuning  : RMSE {a['RMSE']:.3f} | MAE {a['MAE']:.3f} | R2 {a['R2']:.3f}  (RMSE change {a['RMSE'] - b['RMSE']:+.3f})")
     if dlo <= 0:
-        print("The MLP does not clearly beat the linear model: most of the remaining error is noise the inputs")
-        print("cannot explain, so extra model complexity brings little - a valid and reportable finding.")
+        print("Tuning gave no statistically significant gain: the limit is the data, not the settings - a valid finding.")
     MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Save the list of fitted networks (average their predictions) - avoids pickling a custom class.
     joblib.dump({"models": ens.models_, "features": cols, "best_params": best_params,
                  "target_mode": target_mode, "metrics": results}, MODEL_FILE)
     with open(REPORT_DIR / "metrics.json", "w") as fh:
         json.dump({"best_params": {k: str(v) for k, v in best_params.items()}, "target_mode": target_mode,
-                   "bootstrap_rmse_ci95": [lo, hi], "paired_bootstrap_linear_minus_mlp_ci95": [dlo, dhi],
+                   "bootstrap_rmse_ci95": [lo, hi], "paired_bootstrap_before_minus_after_ci95": [dlo, dhi],
+                   "cv_rmse_before_tuning": before_cv["cv_RMSE"], "cv_rmse_after_tuning": -search.best_score_,
+                   "params_before_tuning": {k: str(v) for k, v in before_p.items()},
                    "results": results}, fh, indent=2, default=float)
     print(f"Model saved   : {MODEL_FILE}")
     print(f"Reports saved : {REPORT_DIR}")
@@ -405,7 +420,7 @@ def predict_units(bundle, X):
 # ─────────────────────────────────────────────
 # 3. PLOTS
 # ─────────────────────────────────────────────
-def _save_plots(ens, y, pred, resid, imp, results, pdps, lc):
+def _save_plots(ens, y, pred, resid, imp, results, pdps, lc, trials, before_cv):
     # Training curves of the first network: loss should fall and validation R2 should level off
     reg = ens.models_[0].regressor_
     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
@@ -440,13 +455,13 @@ def _save_plots(ens, y, pred, resid, imp, results, pdps, lc):
     ax.set(title="MLP permutation importance", xlabel="RMSE increase when shuffled")
     fig.tight_layout(); fig.savefig(REPORT_DIR / "permutation_importance.png", dpi=150); plt.close(fig)
 
-    # Partial dependence: MLP curve vs linear line
+    # Partial dependence: shape of each effect
     if pdps:
         fig, axs = plt.subplots(1, len(pdps), figsize=(4 * len(pdps), 3.6), squeeze=False)
-        for ax, (col, (g, c_mlp, c_lin)) in zip(axs[0], pdps.items()):
-            ax.plot(g, c_mlp, "o-", label="MLP"); ax.plot(g, c_lin, "s--", label="Linear")
+        for ax, (col, (g, c_mlp)) in zip(axs[0], pdps.items()):
+            ax.plot(g, c_mlp, "o-")
             ax.set(title=col, xlabel="scaled value", ylabel="avg predicted units")
-        axs[0][0].legend(); fig.suptitle("Partial dependence: shape of each effect", y=1.03)
+        fig.suptitle("Partial dependence: shape of each effect", y=1.03)
         fig.tight_layout(); fig.savefig(REPORT_DIR / "partial_dependence.png", dpi=150, bbox_inches="tight"); plt.close(fig)
 
     # Learning curve
@@ -455,11 +470,21 @@ def _save_plots(ens, y, pred, resid, imp, results, pdps, lc):
     ax.set(xlabel="training rows (earliest dates)", ylabel="RMSE", title="Learning curve"); ax.legend()
     fig.tight_layout(); fig.savefig(REPORT_DIR / "learning_curve.png", dpi=150); plt.close(fig)
 
-    # Model comparison
-    m = pd.DataFrame(results).T[["MAE", "RMSE"]]
-    ax = m.plot.bar(figsize=(7, 4), rot=15)
-    ax.set_title("Error comparison (test set, lower = better)")
-    plt.tight_layout(); plt.savefig(REPORT_DIR / "model_comparison.png", dpi=150); plt.close()
+    # Before vs after tuning (test set, lower = better)
+    m = pd.DataFrame({k: results[k] for k in ("mlp_before_tuning", "mlp_after_tuning", "mlp_ensemble")}).T[["MAE", "RMSE"]]
+    ax = m.plot.bar(figsize=(7, 4), rot=0)
+    ax.set_title("MLP before vs after tuning (test set, lower = better)")
+    for c in ax.containers:
+        ax.bar_label(c, fmt="%.2f", fontsize=8)
+    plt.tight_layout(); plt.savefig(REPORT_DIR / "tuning_before_after.png", dpi=150); plt.close()
+
+    # Every tuning trial (ranked) against the default settings
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.scatter(range(1, len(trials) + 1), trials["cv_RMSE"].values, s=25, label="tuning trials (ranked)")
+    ax.axhline(before_cv["cv_RMSE"], color="r", ls="--", label="before tuning (defaults)")
+    ax.axhline(trials["cv_RMSE"].min(), color="g", ls="--", label="best after tuning")
+    ax.set(xlabel="trial rank (1 = best)", ylabel="CV RMSE", title="Tuning trials vs default settings"); ax.legend()
+    fig.tight_layout(); fig.savefig(REPORT_DIR / "tuning_trials.png", dpi=150); plt.close(fig)
 
 
 if __name__ == "__main__":

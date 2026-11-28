@@ -1,11 +1,12 @@
 import json
 import os
+import sys
 import warnings
 from pathlib import Path
 
 import joblib
 import matplotlib
-matplotlib.use("Agg")                      # no display needed (server / UI backend safe)
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -24,8 +25,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import PolynomialFeatures
 
 warnings.filterwarnings("ignore")
-# n_jobs=-1 runs the search in separate worker processes (spawned on Windows), and those do NOT
-# inherit the filter above. This environment variable is inherited, so the workers stay quiet too.
+
 os.environ["PYTHONWARNINGS"] = "ignore"
 
 LINE = "─" * 45
@@ -34,8 +34,6 @@ LINE = "─" * 45
 # 0. SETTINGS
 # ─────────────────────────────────────────────
 SEED = 42
-# src/backend/model/linear_regression/<this file>  -> project root is 4 levels up.
-# PROJECT_ROOT can override it (tests / other machines).
 ROOT_DIR = (Path(os.environ["PROJECT_ROOT"]) if "PROJECT_ROOT" in os.environ
             else Path(__file__).resolve().parents[2])
 TRAIN_FILE = ROOT_DIR / "data" / "processed" / "train.csv"
@@ -46,15 +44,17 @@ REPORT_DIR = Path(__file__).resolve().parent / "outputs"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 TARGET = "Units_Sold"
-# Not model inputs: the label, bookkeeping columns, and Inventory_Level (kept for the recommender;
-# it is strongly tied to sales, so excluding it keeps this a pure "demand drivers" model).
-NON_FEATURES = [TARGET, "Date", "Transaction_ID", "Product_ID", "Inventory_Level"]
 
-N_SPLITS = 5            # time-ordered CV folds
-N_ITER_SEARCH = 40      # random-search budget (cheaper than a full grid, Part B.1)
-SOLVER_ITER, SOLVER_TOL = 20000, 1e-3   # Lasso / ElasticNet solver: enough iterations, sensible tolerance
-N_BOOTSTRAP = 500       # resamples for the confidence interval on test RMSE
-N_BOOT_COEF = 200       # resamples for coefficient confidence intervals
+if str(ROOT_DIR / "src" / "backend") not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR / "src" / "backend"))
+from data_modeling import NON_FEATURE_COLS
+NON_FEATURES = NON_FEATURE_COLS
+
+N_SPLITS = 5
+N_ITER_SEARCH = 40 
+SOLVER_ITER, SOLVER_TOL = 20000, 1e-3
+N_BOOTSTRAP = 500  
+N_BOOT_COEF = 200
 GROUP_PREFIXES = ["Product_Category_", "Store_Type_", "Weather_Condition_"]
 INTERACTION_COLS = ["Unit_Price", "Discount_Percent", "Marketing_Spend",
                     "Customer_Footfall", "Month", "Promotion", "Holiday"]
@@ -64,7 +64,6 @@ INTERACTION_COLS = ["Unit_Price", "Discount_Percent", "Marketing_Spend",
 # 1. HELPERS
 # ─────────────────────────────────────────────
 def load_split(path):
-    """Read a prepared split (already encoded + scaled by data_modeling.py)."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"{path} not found - run pipeline.py first")
     df = pd.read_csv(path)
@@ -72,34 +71,24 @@ def load_split(path):
 
 
 def decode_group(X, prefix):
-    """Turn a one-hot family (e.g. Product_Category_*) back into one readable label per row."""
     cols = [c for c in X.columns if c.startswith(prefix)]
     return X[cols].idxmax(axis=1).str.replace(prefix, "", regex=False)
 
 
 def score_all(y_true, y_pred):
-    """Regression metrics. Predictions are clipped at 0: a negative unit count is impossible."""
     y_pred = np.clip(np.asarray(y_pred, dtype=float), 0, None)
     y_true = np.asarray(y_true, dtype=float)
     return {
-        "MAE": mean_absolute_error(y_true, y_pred),                 # average miss, in units
-        "RMSE": float(np.sqrt(mean_squared_error(y_true, y_pred))),  # punishes big misses more
-        "MedAE": median_absolute_error(y_true, y_pred),             # robust to a few huge misses
-        "R2": r2_score(y_true, y_pred),                             # share of variance explained
+        "MAE": mean_absolute_error(y_true, y_pred),
+        "RMSE": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "MedAE": median_absolute_error(y_true, y_pred),
+        "R2": r2_score(y_true, y_pred), 
         "sMAPE_%": 100 * np.mean(2 * np.abs(y_pred - y_true) / (np.abs(y_true) + np.abs(y_pred) + 1e-9)),
-        "Bias": float(np.mean(y_pred - y_true)),                    # >0 = over-forecasting on average
+        "Bias": float(np.mean(y_pred - y_true)),
     }
 
 
 def make_pipeline(feature_cols, reg, use_interactions=False, use_l1_selection=False, log_target=False):
-    """
-    One candidate model. Switches map to Part A.5 (representations / feature selection):
-      use_interactions : add pairwise products of the main drivers (price x promotion, ...) so a LINEAR
-                         model can capture simple non-linear effects
-      use_l1_selection : keep only inputs an L1-penalised model finds useful
-      log_target       : model log(1 + Units_Sold) - stabilises the spread of a skewed count and keeps
-                         predictions positive. Predictions are converted back to units automatically.
-    """
     steps = []
     if use_interactions:
         cols = [c for c in INTERACTION_COLS if c in feature_cols]
@@ -116,12 +105,10 @@ def make_pipeline(feature_cols, reg, use_interactions=False, use_l1_selection=Fa
 
 
 def inner(model):
-    """The Pipeline inside a (possibly target-transformed) model."""
     return model.regressor_ if isinstance(model, TransformedTargetRegressor) else model
 
 
 def feature_names_of(pipe, input_cols):
-    """Follow the column names through the optional steps so coefficients stay readable."""
     names = np.array(input_cols)
     if not isinstance(pipe.named_steps.get("interact", "passthrough"), str):
         names = np.array(pipe.named_steps["interact"].get_feature_names_out())
@@ -145,8 +132,6 @@ def cv_rmse_mae(model, X, y, cv):
 def train_linear_regression():
     np.random.seed(SEED)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 1. Load the prepared data (already encoded and scaled by data_modeling)
     print(LINE)
     print("1. Data")
     X_train, y_train, date_train = load_split(TRAIN_FILE)
@@ -163,7 +148,7 @@ def train_linear_regression():
     print("Missing values : none (handled upstream in data_cleaning.py: median / mode imputation)")
     print(LINE + "\n")
 
-    cv = TimeSeriesSplit(n_splits=N_SPLITS)    # always validate on dates AFTER the training dates
+    cv = TimeSeriesSplit(n_splits=N_SPLITS) 
 
     # 2. Reference point: what does "no learning" score?
     print(LINE)
@@ -186,7 +171,7 @@ def train_linear_regression():
     print("A small +/- means the score is stable from fold to fold (stability / reliability).")
     print(LINE + "\n")
 
-    # 4. Iterate (A.5 / A.6): one improvement at a time, judged by CV on TRAIN only
+    # 4. Iterate : one improvement at a time, judged by CV on TRAIN only
     print(LINE)
     print("4. Refinement experiments (cross-validation on TRAIN only - test stays untouched)")
     variants = {
@@ -202,7 +187,7 @@ def train_linear_regression():
     exp.to_csv(REPORT_DIR / "experiments_cv.csv", index=False)
     print(LINE + "\n")
 
-    # 5. Part B.1 - automatic search over regularisation family, strength, representation and target.
+    # 5. automatic search over regularisation family, strength, representation and target.
     #    Random search (not a full grid) is cheaper and just as good for a handful of settings.
     print(LINE)
     print("5. Hyper-parameter tuning (RandomizedSearchCV, TimeSeriesSplit)")
@@ -214,7 +199,7 @@ def train_linear_regression():
               [c for c in INTERACTION_COLS if c in cols])],
             remainder="passthrough", verbose_feature_names_out=False).set_output(transform="pandas")
         select = SelectFromModel(Lasso(alpha=0.01, max_iter=SOLVER_ITER, tol=SOLVER_TOL, random_state=SEED), threshold=1e-6)
-        space = [   # one dict per model family so each only gets parameters it understands
+        space = [ 
             {"interact": ["passthrough", inter], "select": ["passthrough", select],
              "reg": [Ridge()], "reg__alpha": loguniform(1e-2, 1e3)},
             {"interact": ["passthrough", inter], "select": ["passthrough", select],
@@ -225,7 +210,7 @@ def train_linear_regression():
         ]
         est = (TransformedTargetRegressor(regressor=base, func=np.log1p, inverse_func=np.expm1)
                if log_target else base)
-        if log_target:     # parameters of a wrapped pipeline need the "regressor__" prefix
+        if log_target:
             space = [{f"regressor__{k}": v for k, v in d.items()} for d in space]
         s = RandomizedSearchCV(est, space, n_iter=N_ITER_SEARCH // 2, cv=cv, n_jobs=-1, random_state=SEED,
                                scoring="neg_root_mean_squared_error", refit=True)
@@ -268,19 +253,12 @@ def train_linear_regression():
     print("If another model's RMSE lies inside this band, the difference may just be noise.")
     print(LINE + "\n")
 
-    # 7. Interpretability (A.3)
+    # 7. Interpretability 
     print(LINE)
     print("7. Key drivers of sales")
     inn = inner(best)
     names = feature_names_of(inn, cols)
     coef = pd.Series(inn.named_steps["reg"].coef_, index=names)
-    # ---- Statistical drivers: plain OLS + bootstrap confidence intervals -------------------------
-    # IMPORTANT (dummy-variable trap): every one-hot family sums to 1 (a row has exactly ONE store type,
-    # ONE category ...) and the sub-categories add up to their category. With an intercept these columns
-    # are perfectly collinear, so OLS cannot tell them apart and returns arbitrary huge numbers (1e13).
-    # Fix: (1) leave the sub-category family out of THIS table (it only repeats the category) and
-    # (2) drop the most common level of each remaining family as the REFERENCE level. Each remaining
-    # dummy coefficient then means "units sold compared with the reference level".
     ols_cols = [c for c in cols if not c.startswith("Product_Subcategory_")]
     reference = []
     for prefix in GROUP_PREFIXES:
@@ -310,7 +288,6 @@ def train_linear_regression():
     print(drivers.head(10).round(3).to_string())
     print(f"Inputs with a reliable (CI excludes 0) effect: {int(drivers.reliable.sum())} of {len(drivers)}")
 
-    # Permutation importance: shuffle one input, see how much the error grows
     perm = permutation_importance(best, X_test, y_test, scoring="neg_root_mean_squared_error",
                                   n_repeats=5, random_state=SEED, n_jobs=-1)
     imp = pd.Series(perm.importances_mean, index=cols).sort_values(ascending=False)
@@ -318,32 +295,25 @@ def train_linear_regression():
     print("\nPermutation importance (RMSE increase when the input is shuffled):")
     print(imp.head(8).round(3).to_string())
 
-    # One merged table so the three views of "what matters" can be read side by side.
-    # Interaction terms are excluded here (they are in coefficients_tuned.csv); a blank means the
-    # input is not part of that view (e.g. sub-categories are not in the OLS table, see above).
     summary = pd.DataFrame(index=cols)
     summary["ols_coef"] = drivers.coef_units
     summary["ols_ci_low"], summary["ols_ci_high"] = drivers.ci_low, drivers.ci_high
     summary["ols_reliable"] = drivers.reliable
-    summary["tuned_coef"] = coef.reindex(cols)        # 0 = removed by the L1 penalty; main effect only
-    summary["permutation_rmse_increase"] = imp
+    summary["tuned_coef"] = coef.reindex(cols) 
     summary = summary.sort_values("permutation_rmse_increase", ascending=False)
     summary.to_csv(REPORT_DIR / "feature_summary.csv")
     print(LINE + "\n")
 
-    # 8. Error analysis (A.4)
+    # 8. Error analysis 
     print(LINE)
     print("8. Error analysis")
-    resid = yt - pred                       # actual - predicted
+    resid = yt - pred 
     print(f"Mean residual (bias): {-resid.mean():+.2f} units  (0 = no systematic over/under-forecast)")
-    # Heteroscedasticity: do errors grow with the predicted level? (a linear-model weakness)
     r_ph, p_ph = stats.spearmanr(pred, np.abs(resid))
     print(f"Error grows with predicted size? Spearman(|residual|, prediction) = {r_ph:.2f} (p={p_ph:.1e})"
           f"{'  -> yes, big sellers are harder to predict' if r_ph > 0.1 else ''}")
-    # Normality of residuals (matters for confidence statements, not for the predictions themselves)
     print(f"Residual skewness {stats.skew(resid):.2f}, excess kurtosis {stats.kurtosis(resid):.2f} "
           "(0 / 0 would be perfectly normal)")
-    # Over- vs under-forecasting: the business cost differs (over = excess stock, under = stock-out)
     print(f"Over-forecast (pred > actual): {np.mean(resid < 0):.1%} of rows | "
           f"under-forecast: {np.mean(resid > 0):.1%}")
     big = np.abs(resid) > 2 * results["tuned"]["MAE"]
@@ -356,12 +326,12 @@ def train_linear_regression():
         label = decode_group(X_test, prefix)
         for val in sorted(label.unique()):
             m = (label == val).to_numpy()
-            if m.sum() >= 30:                                   # tiny groups are too noisy
+            if m.sum() >= 30: 
                 s = score_all(yt[m], pred[m])
                 slices.append({"slice": prefix.rstrip("_"), "value": val, "rows": int(m.sum()),
                                "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"]})
     dts = pd.to_datetime(date_test).reset_index(drop=True)
-    for i, chunk in enumerate(np.array_split(np.arange(len(dts)), 3), 1):   # 3 chronological periods
+    for i, chunk in enumerate(np.array_split(np.arange(len(dts)), 3), 1):
         s = score_all(yt[chunk], pred[chunk])
         slices.append({"slice": "Time period", "value": f"T{i}: {dts[chunk[0]].date()} to {dts[chunk[-1]].date()}",
                        "rows": len(chunk), "MAE": s["MAE"], "RMSE": s["RMSE"], "R2": s["R2"], "Bias": s["Bias"]})
@@ -371,12 +341,10 @@ def train_linear_regression():
     print(rob.to_string(index=False))
     print("Time periods show whether error grows as the data moves away from the training dates (drift).")
 
-    # Worst predictions, for manual inspection
     worst = pd.DataFrame({"Date": date_test.values, "Actual": yt, "Predicted": pred.round(1),
                           "AbsError": np.abs(resid).round(1)}).sort_values("AbsError", ascending=False)
     worst.head(20).to_csv(REPORT_DIR / "worst_predictions.csv", index=False)
 
-    # Row-level predictions for Student C (evaluation) and Student D (UI / recommender)
     out = pd.DataFrame({"Date": date_test.values, "Actual_Units": yt, "Predicted_Units": pred.round(2),
                         "Error": (pred - yt).round(2)})
     out.to_csv(REPORT_DIR / "test_predictions.csv", index=False)
@@ -389,7 +357,7 @@ def train_linear_regression():
     print(f"Saved to {REPORT_DIR}")
     print(LINE + "\n")
 
-    # 10. Shortlist summary + save (A.7)
+    # 10. Shortlist summary + save
     print(LINE)
     print("10. Summary and saving")
     gain = results["baseline_v0_OLS"]["RMSE"] - results["tuned"]["RMSE"]
@@ -422,7 +390,7 @@ def _save_plots(y, pred, resid, drivers, imp, results):
     ax.set_title("Actual vs predicted (test set)"); ax.legend()
     fig.tight_layout(); fig.savefig(REPORT_DIR / "actual_vs_predicted.png", dpi=150); plt.close(fig)
 
-    # Residuals vs prediction (a funnel shape = errors grow with size = heteroscedasticity)
+    # Residuals vs prediction
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.scatter(pred, resid, s=5, alpha=0.3); ax.axhline(0, color="r", lw=1)
     ax.set_xlabel("Predicted units"); ax.set_ylabel("Residual (actual - predicted)")

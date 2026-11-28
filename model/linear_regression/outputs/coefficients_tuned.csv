@@ -1,73 +1,52 @@
 ,coef
-Product_Category_Groceries,6.697187640715664
-Holiday,5.904231729370403
-Promotion,4.062805823855525
-Unit_Price,-3.5252844674230093
-Weather_Condition_Sunny,3.2694367737307464
-Marketing_Spend,2.9465376846196887
-Customer_Footfall,2.938876288028026
-Product_Category_Sports,-2.891185365747647
-Product_Category_Home & Kitchen,-2.5476718019089746
-Weather_Condition_Stormy,-2.5450464605130416
-Customer_Footfall Holiday,2.296671565417515
-Product_Category_Beauty,-2.062424717050681
-Product_Category_Electronics,2.0601212734561067
-Weather_Condition_Cloudy,1.3867404512044017
-Product_Subcategory_Beverages,1.3695861122638129
-Promotion Holiday,1.3235336267537439
-Marketing_Spend Promotion,1.3192797919844765
-Weather_Condition_Snowy,-1.176442474759441
-Unit_Price Holiday,-1.137908328029751
-Product_Subcategory_Dairy,1.0945798076352522
-Month Holiday,1.070023920241572
-Unit_Price Promotion,-0.8396447002022295
-Product_Subcategory_Skincare,-0.7403794197523338
-Unit_Price Marketing_Spend,-0.7255531350109984
-Product_Subcategory_Storage,-0.7233911164900799
-Customer_Footfall Promotion,0.70316619708685
-Unit_Price Customer_Footfall,-0.6924543050353759
-Product_Subcategory_Fresh Produce,0.6586021944872184
-Discount_Percent Holiday,0.6480621006793619
-Product_Category_Clothing,-0.6205067366175868
-Product_Subcategory_Snacks,0.5743894557540871
-Product_Subcategory_Cookware,-0.5343383012664438
-Marketing_Spend Customer_Footfall,0.5123035795202955
-Marketing_Spend Holiday,0.4903143807746204
-Product_Subcategory_Fragrance,-0.4896422434459313
-Month,-0.48148051272818215
-Product_Subcategory_Board Games,0.42340115213090157
-Product_Subcategory_Audio,0.3886181095177518
-Store_Type_Convenience Store,-0.38226769336468835
-Product_Subcategory_Outdoor,-0.38212562266735345
-Product_Category_Toys,0.36453655121234757
-Product_Subcategory_Makeup,0.32574607612443857
-Product_Subcategory_Educational,-0.32542857472372555
-Discount_Percent,0.30037140297194714
-Product_Subcategory_Fitness,-0.29875690973942015
-Discount_Percent Marketing_Spend,-0.2958222887242204
-Product_Subcategory_Furniture,-0.2891563701628341
-Discount_Percent Promotion,-0.22976966183859193
-Marketing_Spend Month,-0.22085012902136802
-Product_Subcategory_Team Sports,-0.19673759538766744
-Product_Subcategory_Haircare,-0.15815843310621763
-Product_Subcategory_Footwear,-0.12013933885140779
-Product_Subcategory_Mobile,0.11924545100279973
-Month Promotion,0.10750105530846392
-Store_Type_Online Store,0.1021294967662531
-Discount_Percent Month,0.060592005288950486
-Customer_Footfall Month,-0.05645744386030846
-Unit_Price Month,0.0473295682618016
-Discount_Percent Customer_Footfall,-0.028125822613571494
-Unit_Price Discount_Percent,-0.02201704506627458
-Store_Type_Hypermarket,0.012866741062718602
-Weather_Condition_Rainy,-0.0
-Product_Subcategory_Action Figures,0.0
-Product_Subcategory_Women,-0.0
-Product_Subcategory_Sportswear,-0.0
-Product_Subcategory_Puzzles,0.0
-Product_Subcategory_Men,0.0
-Product_Subcategory_Laptop,-0.0
-Product_Subcategory_Kids,-0.0
+Log_Effective_Price,-9.53283544720769
+Product_Category_Electronics,8.207072920640496
+Holiday,6.580853434166573
+Product_Category_Beauty,-3.4582324006977383
+Promotion,3.448671915132909
+Weather_Condition_Sunny,3.26351887573856
+Marketing_Spend,3.134678009569516
+Customer_Footfall,2.9978294291053196
+Price_Gap,-2.6452723686900885
+Weather_Condition_Stormy,-2.0811250027910777
+Customer_Footfall Holiday,1.9434491766221431
+Product_Category_Home & Kitchen,1.8920158983914288
+Product_Category_Toys,-1.5621583378075077
+Weather_Condition_Cloudy,1.3420903562510216
+Marketing_Spend Promotion,1.0796451785864505
+Discount_Percent Promotion,-1.0738965295064944
+Unit_Price,0.8875522332004099
+Weather_Condition_Snowy,-0.8490877548528356
+Promotion Holiday,0.8373377241607897
+Unit_Price Marketing_Spend,-0.7909804787056616
+Unit_Price Holiday,-0.7773558402835438
+Month Holiday,0.6656197926457392
+Customer_Footfall Promotion,0.6359109924727144
+Unit_Price Customer_Footfall,-0.5660811031741517
+Discount_Percent Holiday,0.5479687592692525
+Marketing_Spend Customer_Footfall,0.48037826834066355
+Marketing_Spend Holiday,0.2923979967543328
+Month,-0.2884204406637757
+Unit_Price Promotion,-0.27998311028575634
+Store_Type_Convenience Store,-0.19998960630200896
+Unit_Price Discount_Percent,-0.13462887333432133
+Discount_Percent Marketing_Spend,-0.11006769844751528
+Marketing_Spend Month,-0.06252187564415077
+Discount_Percent Month,0.0374389481770361
+Discount_Percent,-0.0
+Discount_Percent Customer_Footfall,-0.0
+Unit_Price Month,0.0
+Customer_Footfall Month,-0.0
+Month Promotion,-0.0
+Product_Category_Groceries,0.0
+Product_Category_Clothing,0.0
+Product_Subcategory_Beverages,0.0
+Product_Subcategory_Audio,0.0
+Product_Subcategory_Skincare,-0.0
+Product_Subcategory_Makeup,0.0
+Product_Subcategory_Fragrance,-0.0
+Product_Subcategory_Educational,-0.0
 Product_Subcategory_Decor,0.0
-Product_Subcategory_Accessories,0.0
-Store_Type_Supermarket,-0.0
+Product_Subcategory_Snacks,-0.0
+Store_Type_Hypermarket,0.0
+Store_Type_Online Store,0.0

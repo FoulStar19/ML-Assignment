@@ -1,8 +1,10 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "frontend"))
+ROOT_DIR = Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-from dashboard import main  # noqa: E402
+from src.frontend.dashboard import run
 
-main()
+run()

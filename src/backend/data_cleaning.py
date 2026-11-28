@@ -23,7 +23,7 @@ FLAG_MAP = {"yes": 1, "y": 1, "true": 1, "1": 1, "no": 0, "n": 0, "false": 0, "0
 NON_NEGATIVE_COLS = ["Units_Sold", "Unit_Price", "Inventory_Level", "Competitor_Price",
                      "Customer_Footfall", "Marketing_Spend", "Online_Orders", "Returns",
                      "Shipping_Time", "Sales_Amount"]
-POSITIVE_COLS = ["Units_Sold", "Unit_Price", "Competitor_Price"]   # a sale or a price of 0 is impossible too (and Price_Gap divides by Competitor_Price)
+POSITIVE_COLS = ["Units_Sold", "Unit_Price", "Competitor_Price"] # a sale or a price of 0 is impossible too (and Price_Gap divides by Competitor_Price)
 RATING_COLS = ["Customer_Satisfaction", "Supplier_Rating"] # 1-5 scores
 
 # Outliers: IQR rule
@@ -65,8 +65,8 @@ def data_clean(df_load, outlier_action="report"):
     for col in TEXT_COLS:
         text = df_clean[col].str.strip().str.replace(r"\s+", " ", regex=True)       # extra spaces
         known = text.dropna()
-        spelling = known.groupby(known.str.lower()).agg(lambda s: s.mode().iloc[0])   # most common spelling
-        tidy = text.str.lower().map(spelling)                                  # "sunny" / "SUNNY" -> "Sunny"
+        spelling = known.groupby(known.str.lower()).agg(lambda s: s.mode().iloc[0]) # most common spelling
+        tidy = text.str.lower().map(spelling)                                       # "sunny" / "SUNNY" -> "Sunny"
         n_fixed += int((tidy.notna() & (tidy != df_clean[col])).sum())
         df_clean[col] = tidy
     print(f"Text columns: {n_fixed:,} values tidied (extra spaces, upper/lower case).")
@@ -93,9 +93,6 @@ def data_clean(df_load, outlier_action="report"):
         df_clean = df_clean.dropna(subset=[DATE_COL, TARGET]).reset_index(drop=True)
         if len(df_clean) < n_before:
             print(f"Dropped {n_before - len(df_clean):,} rows with a missing {DATE_COL} or {TARGET}.")
-        # NOTE: medians/modes here come from the whole file, before the train/test split. The current raw
-        # data has no missing cells, so this never fires; if it starts to, fit the fill values on the
-        # training rows only (e.g. an imputer inside the ColumnTransformer in data_modeling).
         for col in NUMERIC_COLS:
             df_clean[col] = df_clean[col].fillna(df_clean[col].median())
         for col in TEXT_COLS + FLAG_COLS:
@@ -106,15 +103,13 @@ def data_clean(df_load, outlier_action="report"):
     # 4. Check for duplicate rows
     print(LINE)
     print("4. Duplicate rows")
-    same_content = [c for c in df_clean.columns if c != ID_COL]      # a repeated transaction gets a new ID
+    same_content = [c for c in df_clean.columns if c != ID_COL] # a repeated transaction gets a new ID
     n_dup = int(df_clean.duplicated(subset=same_content).sum())
     if n_dup == 0:
         print("No duplicate rows found.")
     else:
         df_clean = df_clean.drop_duplicates(subset=same_content).reset_index(drop=True)
         print(f"Dropped {n_dup:,} duplicate rows.")
-    # Repeated Date + Store + Product keys are reported, not dropped: in this dataset the IDs are not stable
-    # (one Product_ID spans several categories and prices), so such rows are different sales, not copies.
     key = ["Date", "Store_ID", "Product_ID"]
     n_key = int(df_clean.duplicated(subset=key, keep=False).sum())
     if n_key:
@@ -140,7 +135,7 @@ def data_clean(df_load, outlier_action="report"):
     if n_found == 0:
         print("No negative values, impossible discounts or bad ratings found.")
 
-    # Consistency checks: reported only, nothing is changed
+    # Consistency checks
     promo_no_disc = int(((df_clean["Promotion"] == 0) & (df_clean["Discount_Percent"] > 0)).sum())
     promo_yes_nodisc = int(((df_clean["Promotion"] == 1) & (df_clean["Discount_Percent"] == 0)).sum())
     expected = df_clean["Units_Sold"] * df_clean["Unit_Price"] * (1 - df_clean["Discount_Percent"] / 100)

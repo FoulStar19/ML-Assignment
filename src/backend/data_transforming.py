@@ -34,8 +34,8 @@ def data_transform(df_clean):
     print(LINE)
     print("2. Price features")
     effective_price = df_transform["Unit_Price"] * (1 - df_transform["Discount_Percent"] / 100)
-    df_transform["Log_Effective_Price"] = np.log(effective_price)                      # price after discount, on a log scale
-    df_transform["Price_Gap"] = df_transform["Unit_Price"] / df_transform[COMPETITOR_COL]  # >1 = dearer than the competitor
+    df_transform["Log_Effective_Price"] = np.log(effective_price)                           # price after discount, on a log scale
+    df_transform["Price_Gap"] = df_transform["Unit_Price"] / df_transform[COMPETITOR_COL]   # >1 = dearer than the competitor
     print("Log_Effective_Price = log(Unit_Price x (1 - Discount/100)); Price_Gap = Unit_Price / Competitor_Price.")
     print(LINE + "\n")
 
